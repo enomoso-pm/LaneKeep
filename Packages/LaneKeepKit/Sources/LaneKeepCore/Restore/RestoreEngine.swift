@@ -28,9 +28,53 @@ public struct RestoreEngine<System: WindowSystem> {
         _ request: RestoreRequest,
         progress: @escaping (RestoreProgress) async -> Void = { _ in }
     ) async -> RestoreReport {
-        let run = RestoreRun(system: system, request: request, progress: progress)
-        return await run.execute()
+        await runForReview(request, progress: progress).report
     }
+
+    /// Runs the restore and also returns the windows it placed, for `review(_:of:)`.
+    public func runForReview(
+        _ request: RestoreRequest,
+        progress: @escaping (RestoreProgress) async -> Void = { _ in }
+    ) async -> RestoreResult<System.Handle> {
+        let run = RestoreRun(system: system, request: request, progress: progress)
+        let report = await run.execute()
+        return RestoreResult(report: report, placements: run.placements)
+    }
+
+    /// Looks once more at the windows a restore placed. Right after a display is connected, macOS
+    /// keeps moving windows for a few seconds, so a window may have left its place again.
+    ///
+    /// Windows that are now `tolerance` (2 pt) or more away from where the restore left them get
+    /// their size and position again, like in the restore. Nothing is launched or reopened;
+    /// windows that are gone or have been minimized since are left alone. Stops when the task is
+    /// cancelled.
+    ///
+    /// - Returns: How many windows were put back.
+    public func review(_ placements: [PlacedWindow<System.Handle>], of request: RestoreRequest) async -> Int {
+        let run = RestoreRun(system: system, request: request, progress: { _ in })
+        return await run.review(placements)
+    }
+}
+
+/// A window a restore placed.
+public struct PlacedWindow<Handle: Hashable> {
+    /// Index of the rule in the workspace.
+    public var ruleIndex: Int
+    public var handle: Handle
+    /// Where the restore left the window (Accessibility coordinates).
+    public var frame: CGRect
+
+    public init(ruleIndex: Int, handle: Handle, frame: CGRect) {
+        self.ruleIndex = ruleIndex
+        self.handle = handle
+        self.frame = frame
+    }
+}
+
+/// The report of a restore and the windows it placed.
+public struct RestoreResult<Handle: Hashable> {
+    public var report: RestoreReport
+    public var placements: [PlacedWindow<Handle>]
 }
 
 /// The state of one restore.
@@ -79,6 +123,8 @@ private final class RestoreRun<System: WindowSystem> {
     private let clock = ContinuousClock()
     private var outcomes: [RuleOutcome?]
     private var completed = 0
+    /// The windows that were placed, in the order they were placed.
+    private(set) var placements: [PlacedWindow<System.Handle>] = []
 
     init(system: System, request: RestoreRequest, progress: @escaping (RestoreProgress) async -> Void) {
         self.system = system
@@ -301,9 +347,53 @@ private final class RestoreRun<System: WindowSystem> {
             let outcome = await place(rule: match.rule, window: match.window)
             work.placedHandles.insert(match.window.handle)
             work.remaining.removeAll { $0 == match.rule }
+            if case .placed(let frame, _) = outcome {
+                placements.append(PlacedWindow(ruleIndex: match.rule, handle: match.window.handle, frame: frame))
+            }
             await finish(match.rule, outcome)
         }
         await system.endArranging(work.bundleID)
+    }
+
+    /// See `RestoreEngine.review(_:of:)`.
+    func review(_ placements: [PlacedWindow<System.Handle>]) async -> Int {
+        var corrected = 0
+        // App by app, so that each app is prepared for moves once.
+        var order: [String] = []
+        var byApp: [String: [PlacedWindow<System.Handle>]] = [:]
+        for placement in placements where rules.indices.contains(placement.ruleIndex) {
+            let bundleID = rules[placement.ruleIndex].bundleID
+            if byApp[bundleID] == nil {
+                order.append(bundleID)
+            }
+            byApp[bundleID, default: []].append(placement)
+        }
+        for bundleID in order {
+            var arranging = false
+            for placement in byApp[bundleID] ?? [] {
+                guard !Task.isCancelled else { break }
+                // Gone (closed, or its app quit), minimized by the user, or still in place.
+                guard let current = await system.frame(of: placement.handle),
+                      !(await system.isMinimized(placement.handle)),
+                      !current.isWithin(tolerance, of: placement.frame)
+                else {
+                    continue
+                }
+                if !arranging {
+                    await system.beginArranging(bundleID)
+                    arranging = true
+                }
+                let window = SystemWindow(handle: placement.handle, title: "", isMinimized: false, frame: current)
+                if await place(rule: placement.ruleIndex, window: window).isPlaced {
+                    corrected += 1
+                }
+            }
+            if arranging {
+                await system.endArranging(bundleID)
+            }
+            guard !Task.isCancelled else { break }
+        }
+        return corrected
     }
 
     /// The display a window is on and its frame relative to that display's visible area.

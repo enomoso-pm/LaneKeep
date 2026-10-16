@@ -17,6 +17,8 @@ final class FakeWindow: Hashable, CustomStringConvertible {
     /// The next this many `setFrame` calls report a failure although the window does move (an app
     /// that answers too late).
     var lateFrameChanges = 0
+    /// A closed window: its handle no longer answers.
+    var isClosed = false
 
     init(title: String, frame: CGRect = CGRect(x: 0, y: 0, width: 400, height: 300), isMinimized: Bool = false) {
         self.title = title
@@ -161,7 +163,7 @@ final class FakeWindowSystem: WindowSystem {
         if setFrameDelay > .zero {
             try? await Task.sleep(for: setFrameDelay)
         }
-        guard window.isMovable else { return .failed }
+        guard window.isMovable, !window.isClosed else { return .failed }
         var size = window.isResizable ? frame.size : window.frame.size
         size.width = max(size.width, window.minimumSize.width)
         size.height = max(size.height, window.minimumSize.height)
@@ -186,6 +188,6 @@ final class FakeWindowSystem: WindowSystem {
     }
 
     func frame(of window: FakeWindow) async -> CGRect? {
-        window.frame
+        window.isClosed ? nil : window.frame
     }
 }

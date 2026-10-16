@@ -130,6 +130,16 @@ public final class AXWindowSystem: WindowSystem {
     }
 }
 
+/// The windows a restore placed, kept for a second look a little later (see
+/// `RestoreEngine.review(_:of:)`).
+///
+/// Holds Accessibility references. They do not change, and the Accessibility API may be called
+/// from any thread; the review only uses them after the restore has finished.
+public struct LiveRestoreFollowUp: @unchecked Sendable {
+    let request: RestoreRequest
+    let placements: [PlacedWindow<AXUIElement>]
+}
+
 /// Runs restores against the real system.
 public enum LiveRestore {
     /// Restores a workspace. The work happens off the main thread; `progress` is called after
@@ -138,8 +148,31 @@ public enum LiveRestore {
         _ request: RestoreRequest,
         progress: @escaping @Sendable (RestoreProgress) async -> Void = { _ in }
     ) async -> RestoreReport {
+        await runWithFollowUp(request, progress: progress).report
+    }
+
+    /// Restores a workspace and keeps what a second look at its windows needs.
+    public static func runWithFollowUp(
+        _ request: RestoreRequest,
+        progress: @escaping @Sendable (RestoreProgress) async -> Void = { _ in }
+    ) async -> (report: RestoreReport, followUp: LiveRestoreFollowUp) {
+        let task = Task.detached(priority: .userInitiated) { () -> (report: RestoreReport, followUp: LiveRestoreFollowUp) in
+            let result = await RestoreEngine(system: AXWindowSystem()).runForReview(request, progress: progress)
+            return (result.report, LiveRestoreFollowUp(request: request, placements: result.placements))
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    /// Puts back the windows of a restore that have moved since (see `RestoreEngine.review(_:of:)`).
+    ///
+    /// - Returns: How many windows were put back.
+    public static func review(_ followUp: LiveRestoreFollowUp) async -> Int {
         let task = Task.detached(priority: .userInitiated) {
-            await RestoreEngine(system: AXWindowSystem()).run(request, progress: progress)
+            await RestoreEngine(system: AXWindowSystem()).review(followUp.placements, of: followUp.request)
         }
         return await withTaskCancellationHandler {
             await task.value

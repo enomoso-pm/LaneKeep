@@ -85,6 +85,8 @@ final class AppModel {
     @ObservationIgnored private var shortcutNoticeTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAutoTrigger: AutoRestoreTrigger?
     @ObservationIgnored private var restoreTask: Task<Void, Never>?
+    /// The second look after an automatic restore (see `RestoreReview`).
+    @ObservationIgnored private var reviewTask: Task<Void, Never>?
     /// When the set of connected displays last changed, and the last restore the user started
     /// (with its displays): a restore the user picked for new displays is not overridden by the
     /// automatic one that follows once the displays have settled.
@@ -385,6 +387,9 @@ final class AppModel {
             return
         }
         refreshDisplays()
+        // A new restore replaces the second look at the previous one.
+        reviewTask?.cancel()
+        reviewTask = nil
         let request = RestoreRequest(workspace: workspace, displays: displays, fallback: preferences.missingDisplayFallback)
         notes[id] = nil
         activeRestore = ActiveRestore(
@@ -399,11 +404,12 @@ final class AppModel {
 
         let started = ContinuousClock.now
         restoreTask = Task {
-            let report = await LiveRestore.run(request) { progress in
+            let (report, followUp) = await LiveRestore.runWithFollowUp(request) { progress in
                 await MainActor.run {
                     self.updateProgress(progress, for: id)
                 }
             }
+            let wasStopped = Task.isCancelled
             if trigger == .manual {
                 // Keep the progress visible for a moment even when every window was already in place.
                 let minimum = Duration.milliseconds(500)
@@ -412,7 +418,29 @@ final class AppModel {
                     try? await Task.sleep(for: minimum - elapsed)
                 }
             }
+            // Before finishing: finishing can start a queued automatic restore, which then cancels
+            // this second look, as any new restore does.
+            if !wasStopped, RestoreReview.isNeeded(isAutomatic: trigger == .automatic, report: report) {
+                self.scheduleReview(followUp, of: id)
+            }
             self.finishRestore(report)
+        }
+    }
+
+    /// Right after a display is connected, macOS keeps moving windows for a few seconds: look at
+    /// the windows of an automatic restore once more a little later, and put back those that
+    /// moved. The result line mentions them; there is no separate notice.
+    private func scheduleReview(_ followUp: LiveRestoreFollowUp, of id: UUID) {
+        reviewTask?.cancel()
+        reviewTask = Task { [weak self] in
+            try? await Task.sleep(for: RestoreReview.delay)
+            guard !Task.isCancelled else { return }
+            let corrected = await LiveRestore.review(followUp)
+            guard !Task.isCancelled, let self else { return }
+            self.reviewTask = nil
+            guard corrected > 0, let note = self.notes[id] else { return }
+            self.notes[id] = RestoreReview.summary(note, corrected: corrected)
+            self.log.info("The second look put back \(corrected) windows")
         }
     }
 
@@ -662,6 +690,8 @@ final class AppModel {
         updatePreferences { $0.autoRestoreEnabled = enabled }
         if !enabled {
             pendingAutoTrigger = nil
+            reviewTask?.cancel()
+            reviewTask = nil
             if activeRestore?.trigger == .automatic {
                 log.info("Automatic restore stopped by the master switch")
                 restoreTask?.cancel()
