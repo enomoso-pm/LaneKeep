@@ -144,6 +144,31 @@ enum Fixtures {
     )
 }
 
+/// Ways the displays change after a restore on `Fixtures.homeDisplays` (the 27" monitor and the
+/// built-in display).
+enum DisplayChange: String, CaseIterable, Sendable {
+    /// The monitor was unplugged.
+    case unplugged
+    /// The lid was closed while the monitor stays connected. The signature stays the same.
+    case lidClosed
+    /// The monitor got another resolution.
+    case resolutionChanged
+
+    var displays: [DisplaySnapshot] {
+        switch self {
+        case .unplugged:
+            return [Fixtures.builtinAlone]
+        case .lidClosed:
+            return [Fixtures.external27]
+        case .resolutionChanged:
+            var external = Fixtures.external27
+            external.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+            external.visibleFrame = CGRect(x: 0, y: 0, width: 1920, height: 1055)
+            return [external, Fixtures.builtin]
+        }
+    }
+}
+
 extension CGRect {
     /// Approximate equality for geometry assertions.
     func isClose(to other: CGRect, tolerance: CGFloat = 0.5) -> Bool {

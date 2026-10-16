@@ -124,6 +124,8 @@ final class FakeWindowSystem: WindowSystem {
 
     /// Time each `setFrame` takes, to simulate slow apps.
     var setFrameDelay: Duration = .zero
+    /// Called after every `setFrame` that moved a window, e.g. to change things right then.
+    var onSetFrame: ((FakeWindow) -> Void)?
 
     func windows(of bundleID: String) async -> [SystemWindow<FakeWindow>]? {
         guard let app = apps[bundleID], app.isRunning else { return [] }
@@ -176,6 +178,7 @@ final class FakeWindowSystem: WindowSystem {
         size.height = max(size.height, window.minimumSize.height)
         window.frame = CGRect(origin: frame.origin, size: size)
         events.append("setFrame \(window.title)")
+        onSetFrame?(window)
         if window.lateFrameChanges > 0 {
             window.lateFrameChanges -= 1
             return .failed

@@ -162,4 +162,15 @@ public enum DisplayGeometry {
             return lhs.frame.maxY > rhs.frame.maxY
         }
     }
+
+    /// Whether two lists describe the same displays, arranged the same way: the same displays
+    /// (the built-in one included), with the same frames, visible frames and main display. The
+    /// order does not matter.
+    ///
+    /// Unlike the signature, this also tells when the lid was closed while a monitor stays
+    /// connected, or when a resolution or the arrangement changed: positions worked out for the
+    /// old displays no longer apply then.
+    public static func isSameArrangement(_ lhs: [DisplaySnapshot], _ rhs: [DisplaySnapshot]) -> Bool {
+        lhs.sorted { $0.uuid < $1.uuid } == rhs.sorted { $0.uuid < $1.uuid }
+    }
 }

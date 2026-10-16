@@ -31,7 +31,7 @@ public struct RestoreEngine<System: WindowSystem> {
         await runForReview(request, progress: progress).report
     }
 
-    /// Runs the restore and also returns the windows it placed, for `review(_:of:)`.
+    /// Runs the restore and also returns the windows it placed, for `review(_:of:currentDisplays:)`.
     public func runForReview(
         _ request: RestoreRequest,
         progress: @escaping (RestoreProgress) async -> Void = { _ in }
@@ -49,8 +49,16 @@ public struct RestoreEngine<System: WindowSystem> {
     /// windows that are gone or have been minimized since are left alone. Stops when the task is
     /// cancelled.
     ///
+    /// Does nothing when `currentDisplays` are not arranged like the displays of the restore
+    /// (`request.displays`): the positions were worked out for those.
+    ///
     /// - Returns: How many windows were put back.
-    public func review(_ placements: [PlacedWindow<System.Handle>], of request: RestoreRequest) async -> Int {
+    public func review(
+        _ placements: [PlacedWindow<System.Handle>],
+        of request: RestoreRequest,
+        currentDisplays: [DisplaySnapshot]
+    ) async -> Int {
+        guard DisplayGeometry.isSameArrangement(request.displays, currentDisplays) else { return 0 }
         let run = RestoreRun(system: system, request: request, progress: { _ in })
         return await run.review(placements)
     }
@@ -355,7 +363,7 @@ private final class RestoreRun<System: WindowSystem> {
         await system.endArranging(work.bundleID)
     }
 
-    /// See `RestoreEngine.review(_:of:)`.
+    /// See `RestoreEngine.review(_:of:currentDisplays:)`.
     func review(_ placements: [PlacedWindow<System.Handle>]) async -> Int {
         var corrected = 0
         // App by app, so that each app is prepared for moves once.
@@ -417,11 +425,18 @@ private final class RestoreRun<System: WindowSystem> {
         if window.isMinimized {
             await unminimize(window.handle)
         }
+        // Stopped (the displays of a second look changed, automatic restores were turned off):
+        // move nothing more, here and after every wait below.
+        guard !Task.isCancelled else {
+            return .cancelled
+        }
         var applied = await system.setFrame(desired, of: window.handle) == .applied
         var current = await system.frame(of: window.handle)
         if !applied || current == nil {
             // A busy app may answer late and move the window anyway: look again before trying once more.
-            try? await Task.sleep(for: request.timing.retryDelay)
+            guard await waitBeforeRetrying() else {
+                return .cancelled
+            }
             current = await system.frame(of: window.handle)
             if current.map({ !$0.isWithin(tolerance, of: desired) }) ?? true {
                 applied = await system.setFrame(desired, of: window.handle) == .applied
@@ -437,7 +452,9 @@ private final class RestoreRun<System: WindowSystem> {
         // the second result counts: the same size as the first time means the app refuses it;
         // otherwise it has come closer, possibly all the way.
         if actual.size.maxAxisDistance(to: desired.size) > tolerance {
-            try? await Task.sleep(for: request.timing.retryDelay)
+            guard await waitBeforeRetrying() else {
+                return .cancelled
+            }
             if await system.setFrame(desired, of: window.handle) == .applied {
                 applied = true
             }
@@ -452,7 +469,9 @@ private final class RestoreRun<System: WindowSystem> {
         // Some apps adjust their window asynchronously; move it again if it is not where expected.
         for attempt in 0..<2 where actual.origin.maxAxisDistance(to: expectedOrigin) > tolerance {
             if attempt > 0 {
-                try? await Task.sleep(for: request.timing.retryDelay)
+                guard await waitBeforeRetrying() else {
+                    return .cancelled
+                }
             }
             _ = await system.setOrigin(expectedOrigin, of: window.handle)
             actual = await system.frame(of: window.handle) ?? actual
@@ -466,6 +485,13 @@ private final class RestoreRun<System: WindowSystem> {
             return .moveFailed
         }
         return .placed(frame: actual, redirected: target.redirected)
+    }
+
+    /// Waits `retryDelay` before trying again. `false` when the task was cancelled meanwhile
+    /// (a cancelled wait ends early, and the window must not be moved then).
+    private func waitBeforeRetrying() async -> Bool {
+        try? await Task.sleep(for: request.timing.retryDelay)
+        return !Task.isCancelled
     }
 
     private func unminimize(_ window: System.Handle) async {

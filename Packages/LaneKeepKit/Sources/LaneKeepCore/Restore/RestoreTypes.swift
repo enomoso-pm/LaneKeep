@@ -86,7 +86,7 @@ public enum RuleOutcome: Equatable, Sendable {
     case appNotResponding
     /// The window refused to move.
     case moveFailed
-    /// The restore was cancelled before this rule was handled.
+    /// The restore was cancelled before this rule was handled, or while its window was being placed.
     case cancelled
 
     public var isPlaced: Bool {

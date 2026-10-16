@@ -131,13 +131,18 @@ public final class AXWindowSystem: WindowSystem {
 }
 
 /// The windows a restore placed, kept for a second look a little later (see
-/// `RestoreEngine.review(_:of:)`).
+/// `RestoreEngine.review(_:of:currentDisplays:)`).
 ///
 /// Holds Accessibility references. They do not change, and the Accessibility API may be called
 /// from any thread; the review only uses them after the restore has finished.
 public struct LiveRestoreFollowUp: @unchecked Sendable {
     let request: RestoreRequest
     let placements: [PlacedWindow<AXUIElement>]
+
+    /// The displays the restore placed the windows for.
+    public var displays: [DisplaySnapshot] {
+        request.displays
+    }
 }
 
 /// Runs restores against the real system.
@@ -167,12 +172,15 @@ public enum LiveRestore {
         }
     }
 
-    /// Puts back the windows of a restore that have moved since (see `RestoreEngine.review(_:of:)`).
+    /// Puts back the windows of a restore that have moved since (see
+    /// `RestoreEngine.review(_:of:currentDisplays:)`). Does nothing when the displays are no
+    /// longer arranged as they were for the restore.
     ///
     /// - Returns: How many windows were put back.
     public static func review(_ followUp: LiveRestoreFollowUp) async -> Int {
+        let displays = await MainActor.run { ScreenReader.currentDisplays() }
         let task = Task.detached(priority: .userInitiated) {
-            await RestoreEngine(system: AXWindowSystem()).review(followUp.placements, of: followUp.request)
+            await RestoreEngine(system: AXWindowSystem()).review(followUp.placements, of: followUp.request, currentDisplays: displays)
         }
         return await withTaskCancellationHandler {
             await task.value

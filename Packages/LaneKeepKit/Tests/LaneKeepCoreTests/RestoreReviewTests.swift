@@ -47,7 +47,7 @@ struct RestoreReviewTests {
         simulateMacOSMoving(notes, by: CGSize(width: 1, height: 0))
         let eventsBefore = system.events.count
 
-        let corrected = await engine.review(result.placements, of: request(workspace))
+        let corrected = await engine.review(result.placements, of: request(workspace), currentDisplays: [Fixtures.builtinAlone])
 
         #expect(corrected == 2)
         #expect(safari.frame == placedSafari)
@@ -68,7 +68,7 @@ struct RestoreReviewTests {
         let result = await engine.runForReview(request(workspace))
         let eventsBefore = system.events.count
 
-        let corrected = await engine.review(result.placements, of: request(workspace))
+        let corrected = await engine.review(result.placements, of: request(workspace), currentDisplays: [Fixtures.builtinAlone])
 
         #expect(corrected == 0)
         #expect(system.events.count == eventsBefore)
@@ -94,7 +94,7 @@ struct RestoreReviewTests {
         notesApp.windows[0].isClosed = true
         let eventsBefore = system.events.count
 
-        let corrected = await engine.review(result.placements, of: request(workspace))
+        let corrected = await engine.review(result.placements, of: request(workspace), currentDisplays: [Fixtures.builtinAlone])
 
         #expect(corrected == 0)
         let reviewEvents = system.events.dropFirst(eventsBefore)
@@ -121,7 +121,7 @@ struct RestoreReviewTests {
             while !Task.isCancelled {
                 await Task.yield()
             }
-            let corrected = await engine.review(result.placements, of: request)
+            let corrected = await engine.review(result.placements, of: request, currentDisplays: request.displays)
             return (corrected, safari.frame == moved)
         }
         for await _ in restored {
@@ -132,6 +132,67 @@ struct RestoreReviewTests {
 
         #expect(outcome.corrected == 0)
         #expect(outcome.untouched)
+    }
+
+    @Test(
+        "Once the displays are no longer arranged as for the restore, the second look moves nothing",
+        arguments: DisplayChange.allCases
+    )
+    func displaysChanged(_ change: DisplayChange) async {
+        let workspace = Fixtures.homeWorkspace
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        let engine = RestoreEngine(system: system)
+        let request = RestoreRequest(workspace: workspace, displays: Fixtures.homeDisplays, fallback: .mainDisplay, timing: Fixtures.fastTiming)
+        let result = await engine.runForReview(request)
+        #expect(result.placements.count == workspace.windows.count)
+        // macOS moved every window when the displays changed.
+        let windows = system.apps.values.flatMap(\.windows)
+        for window in windows {
+            simulateMacOSMoving(window, by: CGSize(width: 60, height: 40))
+        }
+        let moved = windows.map(\.frame)
+        let eventsBefore = system.events.count
+
+        let corrected = await engine.review(result.placements, of: request, currentDisplays: change.displays)
+
+        #expect(corrected == 0)
+        #expect(system.events.count == eventsBefore)
+        #expect(windows.map(\.frame) == moved)
+    }
+
+    @Test("A second look stopped while it sets a window moves that window no further")
+    func stoppedWhilePlacing() async {
+        let task = Task { () -> (corrected: Int, frameChanges: Int, moves: Int) in
+            let workspace = Fixtures.laptopWorkspace
+            let system = FakeWindowSystem()
+            system.addApps(for: workspace)
+            let engine = RestoreEngine(system: system)
+            let request = RestoreRequest(workspace: workspace, displays: [Fixtures.builtinAlone], fallback: .mainDisplay, timing: Fixtures.fastTiming)
+            let result = await engine.runForReview(request)
+            let safari = system.apps[workspace.windows[0].bundleID]!.windows[0]
+            // Moved and shrunk by macOS; the app applies the next size late, so that the second
+            // look would wait and set the frame again.
+            simulateMacOSMoving(safari, by: CGSize(width: 40, height: 25), resizingTo: CGSize(width: 600, height: 400))
+            safari.lateResizes = 1
+            // The displays change right as the window gets its frame: the second look is stopped.
+            system.onSetFrame = { _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+            let eventsBefore = system.events.count
+            let corrected = await engine.review(result.placements, of: request, currentDisplays: request.displays)
+            let events = system.events.dropFirst(eventsBefore)
+            return (
+                corrected,
+                events.filter { $0.hasPrefix("setFrame") }.count,
+                events.filter { $0.hasPrefix("setOrigin") }.count
+            )
+        }
+        let outcome = await task.value
+
+        #expect(outcome.corrected == 0)
+        #expect(outcome.frameChanges == 1)
+        #expect(outcome.moves == 0)
     }
 
     @Test("Only automatic restores that placed windows get a second look")

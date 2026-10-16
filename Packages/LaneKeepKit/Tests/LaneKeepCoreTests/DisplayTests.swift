@@ -154,6 +154,22 @@ struct DisplayGeometryTests {
         let window = CGRect(x: 10_000, y: 10_000, width: 300, height: 300)
         #expect(DisplayGeometry.display(forAccessibilityRect: window, among: Fixtures.homeDisplays, primaryHeight: 1440) == nil)
     }
+
+    @Test("Two arrangements are the same with the same displays in the same places, in any order")
+    func sameArrangement() {
+        let home = Fixtures.homeDisplays
+        #expect(DisplayGeometry.isSameArrangement(home, Array(home.reversed())))
+        for change in DisplayChange.allCases {
+            #expect(!DisplayGeometry.isSameArrangement(home, change.displays), "\(change)")
+        }
+        // Closing the lid keeps the signature, but not the arrangement.
+        #expect(DisplaySignature.make(for: DisplayChange.lidClosed.displays) == DisplaySignature.make(for: home))
+        // The Dock moved to the built-in display: its visible area is smaller.
+        var withDock = Fixtures.builtin
+        withDock.visibleFrame.origin.y += 60
+        withDock.visibleFrame.size.height -= 60
+        #expect(!DisplayGeometry.isSameArrangement(home, [Fixtures.external27, withDock]))
+    }
 }
 
 @Suite("Workspace availability")

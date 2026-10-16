@@ -78,6 +78,8 @@ final class AppModel {
 
     private let store = LaneKeepStore()
     private let shortcuts = ShortcutCenter()
+    /// The second look after an automatic restore (see `RestoreReview`).
+    private let reviewScheduler = RestoreReviewScheduler()
     @ObservationIgnored private var displayMonitor: DisplayMonitor?
     @ObservationIgnored private var saveWorkspacesTask: Task<Void, Never>?
     @ObservationIgnored private var savePreferencesTask: Task<Void, Never>?
@@ -85,8 +87,6 @@ final class AppModel {
     @ObservationIgnored private var shortcutNoticeTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAutoTrigger: AutoRestoreTrigger?
     @ObservationIgnored private var restoreTask: Task<Void, Never>?
-    /// The second look after an automatic restore (see `RestoreReview`).
-    @ObservationIgnored private var reviewTask: Task<Void, Never>?
     /// When the set of connected displays last changed, and the last restore the user started
     /// (with its displays): a restore the user picked for new displays is not overridden by the
     /// automatic one that follows once the displays have settled.
@@ -259,6 +259,8 @@ final class AppModel {
         if current != displays {
             displays = current
         }
+        // Whichever way a change was noticed, a second look planned for other displays is dropped.
+        reviewScheduler.displaysChanged(to: current)
     }
 
     func refreshPermission() {
@@ -388,8 +390,7 @@ final class AppModel {
         }
         refreshDisplays()
         // A new restore replaces the second look at the previous one.
-        reviewTask?.cancel()
-        reviewTask = nil
+        reviewScheduler.cancel()
         let request = RestoreRequest(workspace: workspace, displays: displays, fallback: preferences.missingDisplayFallback)
         notes[id] = nil
         activeRestore = ActiveRestore(
@@ -430,15 +431,14 @@ final class AppModel {
     /// Right after a display is connected, macOS keeps moving windows for a few seconds: look at
     /// the windows of an automatic restore once more a little later, and put back those that
     /// moved. The result line mentions them; there is no separate notice.
+    ///
+    /// When the displays change before or during the second look, it is dropped: its positions
+    /// belong to the displays of the restore (see `refreshDisplays()`).
     private func scheduleReview(_ followUp: LiveRestoreFollowUp, of id: UUID) {
-        reviewTask?.cancel()
-        reviewTask = Task { [weak self] in
-            try? await Task.sleep(for: RestoreReview.delay)
-            guard !Task.isCancelled else { return }
-            let corrected = await LiveRestore.review(followUp)
-            guard !Task.isCancelled, let self else { return }
-            self.reviewTask = nil
-            guard corrected > 0, let note = self.notes[id] else { return }
+        reviewScheduler.schedule(for: followUp.displays) {
+            await LiveRestore.review(followUp)
+        } completion: { [weak self] corrected in
+            guard let self, corrected > 0, let note = self.notes[id] else { return }
             self.notes[id] = RestoreReview.summary(note, corrected: corrected)
             self.log.info("The second look put back \(corrected) windows")
         }
@@ -690,8 +690,7 @@ final class AppModel {
         updatePreferences { $0.autoRestoreEnabled = enabled }
         if !enabled {
             pendingAutoTrigger = nil
-            reviewTask?.cancel()
-            reviewTask = nil
+            reviewScheduler.cancel()
             if activeRestore?.trigger == .automatic {
                 log.info("Automatic restore stopped by the master switch")
                 restoreTask?.cancel()
