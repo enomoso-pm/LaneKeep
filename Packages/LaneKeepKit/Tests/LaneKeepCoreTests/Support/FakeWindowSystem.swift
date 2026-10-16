@@ -19,6 +19,9 @@ final class FakeWindow: Hashable, CustomStringConvertible {
     var lateFrameChanges = 0
     /// A closed window: its handle no longer answers.
     var isClosed = false
+    /// The next this many `setFrame` calls move the window but leave its size as it was (an app
+    /// that applies sizes late).
+    var lateResizes = 0
 
     init(title: String, frame: CGRect = CGRect(x: 0, y: 0, width: 400, height: 300), isMinimized: Bool = false) {
         self.title = title
@@ -165,6 +168,10 @@ final class FakeWindowSystem: WindowSystem {
         }
         guard window.isMovable, !window.isClosed else { return .failed }
         var size = window.isResizable ? frame.size : window.frame.size
+        if window.lateResizes > 0 {
+            window.lateResizes -= 1
+            size = window.frame.size
+        }
         size.width = max(size.width, window.minimumSize.width)
         size.height = max(size.height, window.minimumSize.height)
         window.frame = CGRect(origin: frame.origin, size: size)

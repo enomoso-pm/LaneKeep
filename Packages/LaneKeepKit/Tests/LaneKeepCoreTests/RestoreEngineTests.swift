@@ -191,6 +191,55 @@ struct RestoreEngineTests {
         #expect(report.results[0].outcome == .placed(frame: window.frame, redirected: false))
     }
 
+    @Test("A size an app applies late is set once more and then taken")
+    func lateResize() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [Fixtures.rule("Slack", display: "BUILTIN", 80, 50, 20, 50)]
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        let window = system.apps[workspace.windows[0].bundleID]!.windows[0]
+        window.frame = CGRect(x: 100, y: 100, width: 600, height: 400)
+        window.lateResizes = 1
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        // The size the rule asks for, at the place it asks for — not moved left as for a refused size.
+        let expected = expectedFrame(workspace.windows[0], on: Fixtures.builtinAlone, primaryHeight: 982)
+        #expect(window.frame == expected)
+        #expect(report.results[0].outcome == .placed(frame: expected, redirected: false))
+        #expect(system.events.filter { $0 == "setFrame \(window.title)" }.count == 2)
+    }
+
+    @Test("A size the app refuses twice is given up and the window kept on screen")
+    func refusedSizeAfterRetry() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [Fixtures.rule("Slack", display: "BUILTIN", 80, 50, 20, 50)]
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        let window = system.apps[workspace.windows[0].bundleID]!.windows[0]
+        window.minimumSize = CGSize(width: 600, height: 400)
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        // Asked twice, then fitted inside the visible area (x 0…1512, y 33…982).
+        #expect(system.events.filter { $0 == "setFrame \(window.title)" }.count == 2)
+        #expect(window.frame == CGRect(x: 912, y: 508, width: 600, height: 474))
+        #expect(report.results[0].outcome == .placed(frame: window.frame, redirected: false))
+    }
+
+    @Test("A window that gets its size right away is set once")
+    func sizeRightAway() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [workspace.windows[0]]
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        let window = system.apps[workspace.windows[0].bundleID]!.windows[0]
+
+        _ = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(system.events.filter { $0 == "setFrame \(window.title)" }.count == 1)
+    }
+
     @Test("Windows that cannot be resized are only moved")
     func fixedSizeWindow() async {
         var workspace = Fixtures.laptopWorkspace

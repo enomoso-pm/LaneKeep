@@ -432,8 +432,19 @@ private final class RestoreRun<System: WindowSystem> {
             return .moveFailed
         }
 
-        // An app may refuse the requested size (minimum size, fixed-size window). Then keep the
-        // window inside the visible area instead of letting it hang off the edge (spec §6.6).
+        // The size is not the one asked for. A slow app may still be applying it, so before
+        // concluding that the app refuses it, wait, set the frame once more and look again. Then
+        // the second result counts: the same size as the first time means the app refuses it;
+        // otherwise it has come closer, possibly all the way.
+        if actual.size.maxAxisDistance(to: desired.size) > tolerance {
+            try? await Task.sleep(for: request.timing.retryDelay)
+            if await system.setFrame(desired, of: window.handle) == .applied {
+                applied = true
+            }
+            actual = await system.frame(of: window.handle) ?? actual
+        }
+        // A size the app does not take (minimum size, fixed-size window): keep the window inside
+        // the visible area instead of letting it hang off the edge (spec §6.6).
         var expectedOrigin = desired.origin
         if actual.size.maxAxisDistance(to: desired.size) > tolerance {
             expectedOrigin = FrameFitting.fit(CGRect(origin: desired.origin, size: actual.size), into: bounds).origin
