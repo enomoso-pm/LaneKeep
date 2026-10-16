@@ -159,16 +159,19 @@ struct DisplayGeometryTests {
     func sameArrangement() {
         let home = Fixtures.homeDisplays
         #expect(DisplayGeometry.isSameArrangement(home, Array(home.reversed())))
+        // The Dock moving to another display changes visible areas only.
+        #expect(DisplayGeometry.isSameArrangement(home, Fixtures.homeDisplaysWithDockOnBuiltin))
         for change in DisplayChange.allCases {
             #expect(!DisplayGeometry.isSameArrangement(home, change.displays), "\(change)")
         }
         // Closing the lid keeps the signature, but not the arrangement.
         #expect(DisplaySignature.make(for: DisplayChange.lidClosed.displays) == DisplaySignature.make(for: home))
-        // The Dock moved to the built-in display: its visible area is smaller.
-        var withDock = Fixtures.builtin
-        withDock.visibleFrame.origin.y += 60
-        withDock.visibleFrame.size.height -= 60
-        #expect(!DisplayGeometry.isSameArrangement(home, [Fixtures.external27, withDock]))
+        // Another display becoming the main one.
+        var builtinAsMain = Fixtures.builtin
+        builtinAsMain.isMain = true
+        var externalAsSecond = Fixtures.external27
+        externalAsSecond.isMain = false
+        #expect(!DisplayGeometry.isSameArrangement(home, [externalAsSecond, builtinAsMain]))
     }
 }
 

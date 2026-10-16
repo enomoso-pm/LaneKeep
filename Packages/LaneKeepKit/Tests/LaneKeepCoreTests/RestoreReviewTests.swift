@@ -177,6 +177,28 @@ struct RestoreReviewTests {
         #expect(windows.map(\.frame) == moved)
     }
 
+    @Test("After the Dock moved to another display, windows are put back into the visible area as it is now")
+    func dockMoved() async {
+        let workspace = Fixtures.homeWorkspace
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        let engine = RestoreEngine(system: system)
+        let request = RestoreRequest(workspace: workspace, displays: Fixtures.homeDisplays, fallback: .mainDisplay, timing: Fixtures.fastTiming)
+        let result = await engine.runForReview(request)
+        // Slack, on the built-in display, was moved by macOS; then the Dock moved there.
+        let slackRule = workspace.windows[3]
+        let slack = window(of: slackRule, in: system)
+        simulateMacOSMoving(slack, by: CGSize(width: 80, height: 50))
+        let displaysNow = Fixtures.homeDisplaysWithDockOnBuiltin
+
+        let corrected = await engine.review(result.placements, of: request, currentDisplays: displaysNow)
+
+        let visibleArea = CoordinateConverter.accessibilityRect(fromAppKit: displaysNow[1].visibleFrame, primaryHeight: 1440)
+        let expected = RelativeGeometry.absoluteFrame(for: slackRule.relativeFrame, in: visibleArea)
+        #expect(corrected == 1)
+        #expect(slack.frame.isClose(to: expected))
+    }
+
     @Test("A second look stopped while it sets a window moves that window no further", arguments: StopWhilePlacing.allCases)
     func stoppedWhilePlacing(_ stop: StopWhilePlacing) async {
         let task = Task { () -> (corrected: Int, frameChanges: Int, moves: Int) in

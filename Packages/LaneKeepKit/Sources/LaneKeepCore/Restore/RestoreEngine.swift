@@ -49,8 +49,9 @@ public struct RestoreEngine<System: WindowSystem> {
     /// windows that are gone or have been minimized since are left alone. Stops when the task is
     /// cancelled.
     ///
-    /// Does nothing when `currentDisplays` are not arranged like the displays of the restore
-    /// (`request.displays`): the positions were worked out for those.
+    /// Does nothing unless `currentDisplays` are the displays of the restore (`request.displays`)
+    /// in the same places. Their visible areas may have changed since (the Dock moved to another
+    /// display): windows go into the visible areas as they are now.
     ///
     /// - Returns: How many windows were put back.
     public func review(
@@ -59,6 +60,8 @@ public struct RestoreEngine<System: WindowSystem> {
         currentDisplays: [DisplaySnapshot]
     ) async -> Int {
         guard DisplayGeometry.isSameArrangement(request.displays, currentDisplays) else { return 0 }
+        var request = request
+        request.displays = currentDisplays
         let run = RestoreRun(system: system, request: request, progress: { _ in })
         return await run.review(placements)
     }

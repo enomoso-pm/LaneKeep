@@ -61,6 +61,15 @@ enum Fixtures {
     )
 
     static let homeDisplays = [external27, builtin]
+
+    /// `homeDisplays` once the Dock has moved to the built-in display: the same displays in the
+    /// same places, with less room at the bottom of the built-in one.
+    static var homeDisplaysWithDockOnBuiltin: [DisplaySnapshot] {
+        var builtin = builtin
+        builtin.visibleFrame.origin.y += 60
+        builtin.visibleFrame.size.height -= 60
+        return [external27, builtin]
+    }
     static let officeDisplays = [office24, office27, officeBuiltin]
 
     static func rule(

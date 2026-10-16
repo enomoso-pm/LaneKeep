@@ -60,7 +60,8 @@ public final class RestoreReviewScheduler {
     }
 
     /// The displays connected now. A second look planned for other displays, or for the same
-    /// ones arranged differently, is dropped, or stopped if it is running.
+    /// ones arranged differently, is dropped, or stopped if it is running. A Dock that moved to
+    /// another display does not count.
     public func displaysChanged(to displays: [DisplaySnapshot]) {
         guard let pending, !DisplayGeometry.isSameArrangement(pending.displays, displays) else { return }
         cancel()

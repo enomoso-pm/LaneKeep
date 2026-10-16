@@ -163,14 +163,18 @@ public enum DisplayGeometry {
         }
     }
 
-    /// Whether two lists describe the same displays, arranged the same way: the same displays
-    /// (the built-in one included), with the same frames, visible frames and main display. The
-    /// order does not matter.
+    /// Whether two lists describe the same displays in the same places: the same displays (the
+    /// built-in one included), with the same frames and the same main display. The order does
+    /// not matter, nor do the visible frames, which change when the Dock moves to another display.
     ///
     /// Unlike the signature, this also tells when the lid was closed while a monitor stays
     /// connected, or when a resolution or the arrangement changed: positions worked out for the
     /// old displays no longer apply then.
     public static func isSameArrangement(_ lhs: [DisplaySnapshot], _ rhs: [DisplaySnapshot]) -> Bool {
-        lhs.sorted { $0.uuid < $1.uuid } == rhs.sorted { $0.uuid < $1.uuid }
+        guard lhs.count == rhs.count else { return false }
+        let byUUID: (DisplaySnapshot, DisplaySnapshot) -> Bool = { $0.uuid < $1.uuid }
+        return lhs.sorted(by: byUUID).elementsEqual(rhs.sorted(by: byUUID)) { left, right in
+            left.uuid == right.uuid && left.frame == right.frame && left.isMain == right.isMain
+        }
     }
 }

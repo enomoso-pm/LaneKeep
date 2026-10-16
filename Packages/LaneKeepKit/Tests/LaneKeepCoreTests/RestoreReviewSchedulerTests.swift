@@ -66,15 +66,17 @@ struct RestoreReviewSchedulerTests {
         #expect(probe.frame == probe.movedFrame)
     }
 
-    @Test("Displays read again without a change: the second look runs")
+    @Test("Displays read again with the displays in their places: the second look runs")
     func noChange() async {
         let scheduler = RestoreReviewScheduler(delay: delay)
         let probe = ReviewProbe()
         schedule(scheduler, probe)
         await Task.yield()
 
-        // A notification without a change; the order of the displays does not matter.
+        // A notification without a change (the order of the displays does not matter), then the
+        // Dock moving to the other display.
         scheduler.displaysChanged(to: Array(Fixtures.homeDisplays.reversed()))
+        scheduler.displaysChanged(to: Fixtures.homeDisplaysWithDockOnBuiltin)
         await waitPastTheDelay()
 
         #expect(probe.runs == 1)

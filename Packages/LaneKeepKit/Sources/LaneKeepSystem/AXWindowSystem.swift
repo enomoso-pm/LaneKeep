@@ -174,7 +174,7 @@ public enum LiveRestore {
 
     /// Puts back the windows of a restore that have moved since (see
     /// `RestoreEngine.review(_:of:currentDisplays:)`). Does nothing when the displays are no
-    /// longer arranged as they were for the restore.
+    /// longer those of the restore in the same places.
     ///
     /// - Returns: How many windows were put back.
     public static func review(_ followUp: LiveRestoreFollowUp) async -> Int {
