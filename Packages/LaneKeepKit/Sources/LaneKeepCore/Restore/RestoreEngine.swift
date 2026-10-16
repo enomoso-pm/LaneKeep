@@ -426,7 +426,7 @@ private final class RestoreRun<System: WindowSystem> {
             await unminimize(window.handle)
         }
         // Stopped (the displays of a second look changed, automatic restores were turned off):
-        // move nothing more, here and after every wait below.
+        // move nothing more. Checked again before every further move; a cancelled wait ends early.
         guard !Task.isCancelled else {
             return .cancelled
         }
@@ -434,7 +434,8 @@ private final class RestoreRun<System: WindowSystem> {
         var current = await system.frame(of: window.handle)
         if !applied || current == nil {
             // A busy app may answer late and move the window anyway: look again before trying once more.
-            guard await waitBeforeRetrying() else {
+            try? await Task.sleep(for: request.timing.retryDelay)
+            guard !Task.isCancelled else {
                 return .cancelled
             }
             current = await system.frame(of: window.handle)
@@ -452,7 +453,8 @@ private final class RestoreRun<System: WindowSystem> {
         // the second result counts: the same size as the first time means the app refuses it;
         // otherwise it has come closer, possibly all the way.
         if actual.size.maxAxisDistance(to: desired.size) > tolerance {
-            guard await waitBeforeRetrying() else {
+            try? await Task.sleep(for: request.timing.retryDelay)
+            guard !Task.isCancelled else {
                 return .cancelled
             }
             if await system.setFrame(desired, of: window.handle) == .applied {
@@ -469,9 +471,10 @@ private final class RestoreRun<System: WindowSystem> {
         // Some apps adjust their window asynchronously; move it again if it is not where expected.
         for attempt in 0..<2 where actual.origin.maxAxisDistance(to: expectedOrigin) > tolerance {
             if attempt > 0 {
-                guard await waitBeforeRetrying() else {
-                    return .cancelled
-                }
+                try? await Task.sleep(for: request.timing.retryDelay)
+            }
+            guard !Task.isCancelled else {
+                return .cancelled
             }
             _ = await system.setOrigin(expectedOrigin, of: window.handle)
             actual = await system.frame(of: window.handle) ?? actual
@@ -485,13 +488,6 @@ private final class RestoreRun<System: WindowSystem> {
             return .moveFailed
         }
         return .placed(frame: actual, redirected: target.redirected)
-    }
-
-    /// Waits `retryDelay` before trying again. `false` when the task was cancelled meanwhile
-    /// (a cancelled wait ends early, and the window must not be moved then).
-    private func waitBeforeRetrying() async -> Bool {
-        try? await Task.sleep(for: request.timing.retryDelay)
-        return !Task.isCancelled
     }
 
     private func unminimize(_ window: System.Handle) async {

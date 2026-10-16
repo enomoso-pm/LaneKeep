@@ -5,6 +5,22 @@ import CoreGraphics
 import Testing
 @testable import LaneKeepCore
 
+/// When a second look is stopped while it sets a window's frame.
+enum StopWhilePlacing: String, CaseIterable, Sendable {
+    /// At the first try, by an app that applies sizes late: a second try would follow.
+    case beforeSecondTry
+    /// At the second try, by an app with a minimum size: moving the window into the visible area
+    /// would follow.
+    case beforeFitting
+
+    var frameChangesBeforeStopping: Int {
+        switch self {
+        case .beforeSecondTry: 1
+        case .beforeFitting: 2
+        }
+    }
+}
+
 @Suite("A second look after automatic restores")
 struct RestoreReviewTests {
     func request(_ workspace: Workspace) -> RestoreRequest {
@@ -161,8 +177,8 @@ struct RestoreReviewTests {
         #expect(windows.map(\.frame) == moved)
     }
 
-    @Test("A second look stopped while it sets a window moves that window no further")
-    func stoppedWhilePlacing() async {
+    @Test("A second look stopped while it sets a window moves that window no further", arguments: StopWhilePlacing.allCases)
+    func stoppedWhilePlacing(_ stop: StopWhilePlacing) async {
         let task = Task { () -> (corrected: Int, frameChanges: Int, moves: Int) in
             let workspace = Fixtures.laptopWorkspace
             let system = FakeWindowSystem()
@@ -171,13 +187,21 @@ struct RestoreReviewTests {
             let request = RestoreRequest(workspace: workspace, displays: [Fixtures.builtinAlone], fallback: .mainDisplay, timing: Fixtures.fastTiming)
             let result = await engine.runForReview(request)
             let safari = system.apps[workspace.windows[0].bundleID]!.windows[0]
-            // Moved and shrunk by macOS; the app applies the next size late, so that the second
-            // look would wait and set the frame again.
             simulateMacOSMoving(safari, by: CGSize(width: 40, height: 25), resizingTo: CGSize(width: 600, height: 400))
-            safari.lateResizes = 1
+            switch stop {
+            case .beforeSecondTry:
+                safari.lateResizes = 1
+            case .beforeFitting:
+                // Too tall for the visible area at its place: it would be moved up into it.
+                safari.minimumSize = CGSize(width: 1400, height: 940)
+            }
             // The displays change right as the window gets its frame: the second look is stopped.
+            var frameChanges = 0
             system.onSetFrame = { _ in
-                withUnsafeCurrentTask { $0?.cancel() }
+                frameChanges += 1
+                if frameChanges == stop.frameChangesBeforeStopping {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
             }
             let eventsBefore = system.events.count
             let corrected = await engine.review(result.placements, of: request, currentDisplays: request.displays)
@@ -191,7 +215,7 @@ struct RestoreReviewTests {
         let outcome = await task.value
 
         #expect(outcome.corrected == 0)
-        #expect(outcome.frameChanges == 1)
+        #expect(outcome.frameChanges == stop.frameChangesBeforeStopping)
         #expect(outcome.moves == 0)
     }
 
