@@ -210,11 +210,7 @@ final class AppModel {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    Task { [weak self] in
-                        // The new state takes a moment to apply.
-                        try? await Task.sleep(for: .milliseconds(300))
-                        self?.refreshPermission()
-                    }
+                    self?.recheckPermissionSoon()
                 }
             }
         )
@@ -306,6 +302,14 @@ final class AppModel {
                 }
             }
             self?.permissionTask = nil
+        }
+    }
+
+    /// Checks the permission again once a change has had a moment to apply.
+    private func recheckPermissionSoon() {
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            self?.refreshPermission()
         }
     }
 

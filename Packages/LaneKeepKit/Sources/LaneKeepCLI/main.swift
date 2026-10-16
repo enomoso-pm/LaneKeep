@@ -390,7 +390,7 @@ enum CLI {
         guard load.problem == nil, let position = load.value.firstIndex(where: { $0.id == id }) else { return }
         var workspaces = load.value
         workspaces[position].lastUsedAt = date
-        try? store.saveWorkspaces(workspaces)
+        _ = try? store.saveWorkspaces(workspaces)
     }
 
     static func permission(prompt: Bool) -> Int32 {
