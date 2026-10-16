@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/LaneKeepKit/.swiftpm/
+
+# Local overrides (signing team etc.)
+Config/Local.xcconfig
