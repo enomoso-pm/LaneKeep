@@ -4,6 +4,8 @@ import SwiftUI
 struct PopoverRootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How tall the save screen would like to be; it grows with the number of windows.
+    @State private var captureIdealHeight: CGFloat = 0
 
     var body: some View {
         content
@@ -41,7 +43,8 @@ struct PopoverRootView: View {
                 CaptureScreen(
                     session: session,
                     onCancel: { model.cancelCapture() },
-                    onSave: { model.saveCapture(session) }
+                    onSave: { model.saveCapture(session) },
+                    onIdealHeightChange: { captureIdealHeight = $0 }
                 )
                 .transition(.opacity)
             }
@@ -51,12 +54,13 @@ struct PopoverRootView: View {
         }
     }
 
-    /// The heights of the mock, limited to the screen the window is on.
+    /// The heights of the mock, limited to the screen the window is on. The save screen is at
+    /// least 720 pt and grows to show all windows without scrolling, like the mock.
     private var height: CGFloat {
         let preferred: CGFloat = switch screen {
         case .onboarding: 560
         case .list: 620
-        case .capture: 720
+        case .capture: max(720, captureIdealHeight)
         }
         return min(preferred, max(420, model.availableScreenHeight - 24))
     }

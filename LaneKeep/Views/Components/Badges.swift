@@ -71,17 +71,22 @@ struct DisplayLabel: View {
     }
 }
 
-/// A keyboard shortcut drawn as a key cap (".kbd").
+/// A keyboard shortcut drawn as a key cap (".kbd"). A placeholder ("なし") is drawn in gray.
 struct KeyCap: View {
     let text: String
+    var isPlaceholder = false
+    var isHighlighted = false
 
     var body: some View {
         Text(text)
-            .font(.lane(13, .semibold))
-            .foregroundStyle(Theme.ink)
+            .font(.lane(13, isPlaceholder ? .regular : .semibold))
+            .foregroundStyle(isPlaceholder ? Theme.sub : Theme.ink)
             .padding(.horizontal, 10)
             .frame(height: 28)
-            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(
+                isHighlighted ? Theme.muted : Theme.panel,
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(Theme.lineStrong, lineWidth: 1)
@@ -128,11 +133,6 @@ struct ColorSwatches: View {
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .strokeBorder(selection == color ? Theme.ink : .clear, lineWidth: 2)
                         )
-                        .overlay {
-                            if selection == color {
-                                LaneIconView(icon: .check, size: 16, color: .white)
-                            }
-                        }
                 }
                 .buttonStyle(.plain)
                 .help(color.displayName)

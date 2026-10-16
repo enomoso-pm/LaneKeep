@@ -7,8 +7,9 @@ struct SettingsRootView: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // 220 pt with the divider, as in the mock.
             SettingsSidebar()
-                .frame(width: 232)
+                .frame(width: 219)
             Rectangle()
                 .fill(Theme.line)
                 .frame(width: 1)
@@ -16,7 +17,8 @@ struct SettingsRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .background(Theme.window)
-        .frame(minWidth: 900, minHeight: 620)
+        // Wide enough for the rule table's narrowest columns next to the sidebar.
+        .frame(minWidth: 980, minHeight: 640)
     }
 
     @ViewBuilder
@@ -39,6 +41,7 @@ struct SettingsRootView: View {
 
 private struct SettingsSidebar: View {
     @Environment(AppModel.self) private var model
+    @State private var workspaceToDelete: Workspace?
 
     var body: some View {
         ScrollView {
@@ -49,10 +52,18 @@ private struct SettingsSidebar: View {
                     } action: {
                         model.settingsPane = .workspace(workspace.id)
                     }
+                    .contextMenu {
+                        Button("復元") { model.restore(workspace.id, trigger: .manual) }
+                            .disabled(model.isRestoring)
+                        Divider()
+                        Button("このワークスペースを削除…", role: .destructive) {
+                            workspaceToDelete = workspace
+                        }
+                    }
                 }
                 if model.workspaces.isEmpty {
                     Text("ワークスペースはまだありません")
-                        .font(.lane(12))
+                        .laneText(12)
                         .foregroundStyle(Theme.sub)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
@@ -78,6 +89,21 @@ private struct SettingsSidebar: View {
         .scrollBounceBehavior(.basedOnSize)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("設定の項目")
+        .confirmationDialog(
+            "「\(workspaceToDelete?.name ?? "")」を削除しますか？",
+            isPresented: Binding(
+                get: { workspaceToDelete != nil },
+                set: { if !$0 { workspaceToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: workspaceToDelete
+        ) { workspace in
+            Button("削除", role: .destructive) {
+                model.deleteWorkspace(workspace.id)
+            }
+        } message: { _ in
+            Text("記録したウィンドウの配置とショートカットが削除されます。この操作は取り消せません。")
+        }
     }
 }
 
@@ -121,11 +147,11 @@ private struct NoWorkspaceView: View {
         VStack(spacing: 10) {
             LaneIconView(icon: .workspace(.display), size: 36, color: Theme.sub)
             Text(model.workspaces.isEmpty ? "ワークスペースはまだありません" : "ワークスペースを選んでください")
-                .font(.lane(15, .semibold))
+                .laneText(15, .semibold)
                 .foregroundStyle(Theme.ink2)
             if model.workspaces.isEmpty {
                 Text("メニューバーの LaneKeep から「今の配置を保存…」を選ぶと、ここで細かく設定できます。")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.sub)
                     .multilineTextAlignment(.center)
             }
@@ -143,7 +169,7 @@ struct SettingsCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.lane(13, .bold))
+                .laneText(13, .bold)
                 .foregroundStyle(Theme.ink)
                 .accessibilityAddTraits(.isHeader)
             content()
@@ -167,7 +193,7 @@ struct HintText: View {
 
     var body: some View {
         Text(text)
-            .font(.lane(12))
+            .laneText(12)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -177,6 +203,6 @@ struct HintText: View {
 #Preview("設定") {
     SettingsRootView()
         .environment(AppModel.preview())
-        .frame(width: 1000, height: 820)
+        .frame(width: 1120, height: 860)
 }
 #endif

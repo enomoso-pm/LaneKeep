@@ -77,14 +77,24 @@ struct LaneButtonStyle: ButtonStyle {
     }
 }
 
-/// A borderless text button ("終了", "あとで").
+/// A borderless text button ("終了", "あとで"). `height` gives it the height of a regular button
+/// (".btn" without a border); otherwise it hugs the text.
 struct PlainTextButtonStyle: ButtonStyle {
     var color: Color = Theme.sub
     var weight: Font.Weight = .medium
     var size: CGFloat = 13
+    var height: CGFloat?
+    var horizontalPadding: CGFloat = 8
 
     func makeBody(configuration: Configuration) -> some View {
-        PlainTextButton(configuration: configuration, color: color, weight: weight, size: size)
+        PlainTextButton(
+            configuration: configuration,
+            color: color,
+            weight: weight,
+            size: size,
+            height: height,
+            horizontalPadding: horizontalPadding
+        )
     }
 
     private struct PlainTextButton: View {
@@ -92,14 +102,17 @@ struct PlainTextButtonStyle: ButtonStyle {
         let color: Color
         let weight: Font.Weight
         let size: CGFloat
+        let height: CGFloat?
+        let horizontalPadding: CGFloat
         @State private var isHovering = false
 
         var body: some View {
             configuration.label
                 .font(.lane(size, weight))
                 .foregroundStyle(color)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, height == nil ? 4 : 0)
+                .frame(height: height)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isHovering || configuration.isPressed ? Theme.muted : .clear)

@@ -26,49 +26,49 @@ enum SnapshotRenderer {
 
     private struct Shot {
         let name: String
-        let size: CGSize
+        /// The size of the image; `nil` uses the view's own size, as the menu bar window does.
+        let size: CGSize?
         let makeView: @MainActor () -> AnyView
     }
 
     private static var shots: [Shot] {
         [
-            Shot(name: "popover-list", size: CGSize(width: 360, height: 620)) {
+            Shot(name: "popover-list", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview()))
             },
-            Shot(name: "popover-restoring", size: CGSize(width: 360, height: 620)) {
+            Shot(name: "popover-restoring", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.restoring)))
             },
-            Shot(name: "popover-finished", size: CGSize(width: 360, height: 620)) {
+            Shot(name: "popover-finished", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.finished)))
             },
-            Shot(name: "popover-capture", size: CGSize(width: 360, height: 720)) {
-                let session = CaptureSession.preview()
-                return AnyView(
-                    CaptureScreen(session: session, onCancel: {}, onSave: {})
-                        .frame(width: 360, height: 720)
-                        .background(Theme.window)
-                )
+            Shot(name: "popover-capture", size: nil) {
+                AnyView(PopoverRootView().environment(AppModel.preview(.capture)))
             },
-            Shot(name: "popover-onboarding", size: CGSize(width: 360, height: 560)) {
+            Shot(name: "popover-onboarding", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.noPermission)))
             },
-            Shot(name: "popover-empty", size: CGSize(width: 360, height: 620)) {
+            Shot(name: "popover-empty", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.empty)))
             },
-            Shot(name: "settings-workspace", size: CGSize(width: 1000, height: 820)) {
+            Shot(name: "settings-workspace", size: CGSize(width: 1120, height: 900)) {
                 AnyView(SettingsRootView().environment(AppModel.preview()))
             },
-            Shot(name: "settings-office", size: CGSize(width: 1000, height: 820)) {
+            Shot(name: "settings-office", size: CGSize(width: 1120, height: 980)) {
                 let model = AppModel.preview()
                 model.settingsPane = .workspace(PreviewData.office.id)
                 return AnyView(SettingsRootView().environment(model))
             },
-            Shot(name: "settings-general", size: CGSize(width: 1000, height: 820)) {
+            // The smallest settings window.
+            Shot(name: "settings-minimum", size: CGSize(width: 980, height: 640)) {
+                AnyView(SettingsRootView().environment(AppModel.preview()))
+            },
+            Shot(name: "settings-general", size: CGSize(width: 1120, height: 900)) {
                 let model = AppModel.preview()
                 model.settingsPane = .general
                 return AnyView(SettingsRootView().environment(model))
             },
-            Shot(name: "settings-excluded", size: CGSize(width: 1000, height: 620)) {
+            Shot(name: "settings-excluded", size: CGSize(width: 1120, height: 640)) {
                 let model = AppModel.preview()
                 model.settingsPane = .excludedApps
                 return AnyView(SettingsRootView().environment(model))
@@ -101,11 +101,12 @@ enum SnapshotRenderer {
         print("LKSNAP-DONE")
     }
 
-    private static func render(_ view: AnyView, size: CGSize, appearance: NSAppearance.Name) async -> Data? {
+    private static func render(_ view: AnyView, size: CGSize?, appearance: NSAppearance.Name) async -> Data? {
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = CGRect(origin: .zero, size: size)
+        let initialSize = size ?? hosting.fittingSize
+        hosting.frame = CGRect(origin: .zero, size: initialSize)
         let window = NSWindow(
-            contentRect: CGRect(origin: CGPoint(x: -20_000, y: -20_000), size: size),
+            contentRect: CGRect(origin: CGPoint(x: -20_000, y: -20_000), size: initialSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -116,10 +117,18 @@ enum SnapshotRenderer {
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
 
-        // Give SwiftUI a few run loop turns to lay out and draw.
-        for _ in 0..<3 {
+        // Give SwiftUI a few run loop turns to lay out and draw, and views that measure their
+        // content (the save screen) the time to settle on their size.
+        for _ in 0..<4 {
             hosting.layoutSubtreeIfNeeded()
             try? await Task.sleep(for: .milliseconds(150))
+            if size == nil {
+                let fitting = hosting.fittingSize
+                if fitting != hosting.frame.size {
+                    window.setContentSize(fitting)
+                    hosting.frame = CGRect(origin: .zero, size: fitting)
+                }
+            }
         }
         guard let representation = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             return nil

@@ -1,3 +1,4 @@
+import AppKit
 import LaneKeepCore
 import SwiftUI
 
@@ -78,6 +79,20 @@ extension Font {
 }
 
 extension View {
+    /// Sets the font and the mock's line height (`line-height: 1.5`).
+    ///
+    /// SwiftUI sets text at the font's natural line height, about 1.2 em. Like CSS, the difference
+    /// goes between the lines and, halved, above the first and below the last line, so that text
+    /// takes up as much room as in the mock. Not for text in fixed-height controls.
+    func laneText(_ size: CGFloat, _ weight: Font.Weight = .regular) -> some View {
+        let metrics = NSFont.systemFont(ofSize: size)
+        let naturalLineHeight = metrics.ascender - metrics.descender + metrics.leading
+        let extra = max(0, size * 1.5 - naturalLineHeight)
+        return font(.lane(size, weight))
+            .lineSpacing(extra)
+            .padding(.vertical, extra / 2)
+    }
+
     /// The white "box" used for cards and grouped content: panel background, 1 pt line border,
     /// 10 pt corners.
     func laneBox(cornerRadius: CGFloat = Theme.Radius.card) -> some View {

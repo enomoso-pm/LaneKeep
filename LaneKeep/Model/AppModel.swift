@@ -662,6 +662,7 @@ extension AppModel {
         case standard
         case restoring
         case finished
+        case capture
         case noPermission
         case empty
     }
@@ -692,6 +693,9 @@ extension AppModel {
                 PreviewData.office.id: "8件を配置しました。うち2件はメイン画面に寄せています",
                 PreviewData.laptop.id: "3件を配置しました。Slackのウィンドウが見つからなかったので起動しています"
             ]
+        case .capture:
+            model.captureSession = CaptureSession.preview()
+            model.popoverRoute = .capture
         case .standard, .noPermission, .empty:
             break
         }

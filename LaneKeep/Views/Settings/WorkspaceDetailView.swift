@@ -10,6 +10,7 @@ struct WorkspaceDetailView: View {
     @State private var selectedRuleID: UUID?
     @State private var overwriteSession: CaptureSession?
     @State private var isConfirmingDelete = false
+    @State private var isEditingAppearance = false
     @State private var ruleToDelete: WindowRule?
 
     var body: some View {
@@ -93,13 +94,12 @@ struct WorkspaceDetailView: View {
 
     private func header(_ workspace: Workspace) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            AppearanceButton(workspace: workspace)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 0) {
                 WorkspaceNameField(name: workspace.name) { newName in
                     model.update(workspaceID) { $0.name = newName }
                 }
                 Text("\(DisplayText.displayNames(workspace.displays))、\(workspace.appCount)アプリ")
-                    .font(.lane(12))
+                    .laneText(12)
                     .foregroundStyle(Theme.sub)
                     .lineLimit(2)
             }
@@ -117,6 +117,10 @@ struct WorkspaceDetailView: View {
                 .buttonStyle(LaneButtonStyle(prominent: true))
                 .disabled(model.isRestoring)
                 Menu {
+                    Button("色とアイコンを変更…") {
+                        isEditingAppearance = true
+                    }
+                    Divider()
                     Button("このワークスペースを削除…", role: .destructive) {
                         isConfirmingDelete = true
                     }
@@ -129,6 +133,9 @@ struct WorkspaceDetailView: View {
                 .fixedSize()
                 .help("その他の操作")
                 .accessibilityLabel("その他の操作")
+                .popover(isPresented: $isEditingAppearance, arrowEdge: .bottom) {
+                    AppearancePicker(workspaceID: workspaceID)
+                }
             }
         }
     }
@@ -168,14 +175,14 @@ struct WorkspaceDetailView: View {
         SettingsCard(title: "自動で復元する条件") {
             Toggle(isOn: binding(\.autoRestoreOnConnect)) {
                 Text("この画面構成を検知したとき")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
             }
             .toggleStyle(LaneSwitchStyle())
             .frame(minHeight: 32)
             Toggle(isOn: binding(\.autoRestoreOnWake)) {
                 Text("スリープ解除のとき")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
             }
             .toggleStyle(LaneSwitchStyle())
@@ -192,35 +199,47 @@ struct WorkspaceDetailView: View {
         SettingsCard(title: "ショートカット") {
             HStack(spacing: 8) {
                 Text("このワークスペースを復元")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 8)
-                if let name = model.shortcutName(for: workspace) {
-                    KeyboardShortcuts.Recorder(for: name, onChange: { _ in
-                        model.shortcutRecorded(for: name)
-                    })
-                    .fixedSize()
-                }
+                let name = model.shortcutName(for: workspace)
+                ShortcutButton(
+                    title: "「\(workspace.name)」を復元",
+                    text: model.shortcutText(for: workspace),
+                    name: name,
+                    onChange: {
+                        if let name {
+                            model.shortcutRecorded(for: name)
+                        }
+                    }
+                )
             }
             HStack(spacing: 8) {
                 Text("メニューを開く")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 8)
-                KeyCap(text: model.menuShortcutText ?? "なし")
+                ShortcutButton(
+                    title: "メニューを開く",
+                    text: model.menuShortcutText,
+                    name: ShortcutCenter.toggleMenu,
+                    onChange: { model.shortcutRecorded(for: ShortcutCenter.toggleMenu) }
+                )
             }
             HStack(spacing: 0) {
                 Text("足りない画面がある場合：")
+                    .font(.lane(12))
                 Text(model.preferences.missingDisplayFallback.title)
-                    .fontWeight(.bold)
+                    .font(.lane(12, .bold))
                     .foregroundStyle(Theme.ink)
                 Button("（変更可）") {
                     model.settingsPane = .general
                 }
                 .buttonStyle(.link)
+                .font(.lane(12))
                 .help("「一般」で変えられます")
             }
-            .font(.lane(12))
+            .laneText(12)
             .foregroundStyle(Theme.sub)
             if let notice = model.shortcutNotice {
                 HintText(notice, color: Theme.warn)
@@ -248,7 +267,7 @@ private struct WorkspaceNameField: View {
     var body: some View {
         TextField("名前", text: $text)
             .textFieldStyle(.plain)
-            .font(.lane(20, .bold))
+            .laneText(20, .bold)
             .foregroundStyle(Theme.ink)
             .focused($isFocused)
             .onSubmit { commit() }
@@ -277,39 +296,29 @@ private struct WorkspaceNameField: View {
     }
 }
 
-/// The workspace tile; clicking it lets the user pick another color and glyph.
-private struct AppearanceButton: View {
-    let workspace: Workspace
+/// The color and glyph of a workspace (the tile in the menu and the sidebar).
+private struct AppearancePicker: View {
+    let workspaceID: UUID
     @Environment(AppModel.self) private var model
-    @State private var isShowingPicker = false
 
     var body: some View {
-        Button {
-            isShowingPicker = true
-        } label: {
-            WorkspaceTile(color: workspace.color, icon: workspace.icon, size: 40)
-        }
-        .buttonStyle(.plain)
-        .help("色とアイコンを変更")
-        .accessibilityLabel("色とアイコンを変更")
-        .popover(isPresented: $isShowingPicker, arrowEdge: .bottom) {
+        if let workspace = model.workspace(workspaceID) {
             VStack(alignment: .leading, spacing: 12) {
                 FieldLabel("色")
                 ColorSwatches(selection: Binding(
-                    get: { model.workspace(workspace.id)?.color ?? workspace.color },
-                    set: { color in model.update(workspace.id) { $0.color = color } }
+                    get: { model.workspace(workspaceID)?.color ?? workspace.color },
+                    set: { color in model.update(workspaceID) { $0.color = color } }
                 ))
                 FieldLabel("アイコン")
                 HStack(spacing: 8) {
                     ForEach(WorkspaceIcon.allCases, id: \.self) { icon in
                         Button {
-                            model.update(workspace.id) { $0.icon = icon }
+                            model.update(workspaceID) { $0.icon = icon }
                         } label: {
                             WorkspaceTile(color: workspace.color, icon: icon, size: 32)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .strokeBorder(workspace.icon == icon ? Theme.ink : .clear, lineWidth: 2)
-                                        .padding(-3)
                                 )
                         }
                         .buttonStyle(.plain)

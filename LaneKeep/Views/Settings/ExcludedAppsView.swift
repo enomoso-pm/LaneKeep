@@ -8,13 +8,14 @@ import UniformTypeIdentifiers
 struct ExcludedAppsView: View {
     @Environment(AppModel.self) private var model
     @State private var runningApps: [RunningAppInfo] = []
+    @State private var isChoosingApp = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("除外するアプリ")
-                        .font(.lane(20, .bold))
+                        .laneText(20, .bold)
                         .foregroundStyle(Theme.ink)
                         .accessibilityAddTraits(.isHeader)
                     HintText("ここにあるアプリのウィンドウは「今の配置を保存」の一覧に出ません。保存済みのワークスペースはそのままです。")
@@ -22,7 +23,7 @@ struct ExcludedAppsView: View {
                 VStack(spacing: 0) {
                     if model.preferences.excludedApps.isEmpty {
                         Text("除外しているアプリはありません")
-                            .font(.lane(13))
+                            .laneText(13)
                             .foregroundStyle(Theme.sub)
                             .frame(maxWidth: .infinity, minHeight: 56)
                     }
@@ -37,23 +38,28 @@ struct ExcludedAppsView: View {
                 }
                 .padding(.horizontal, 12)
                 .laneBox()
-                Menu {
-                    let candidates = addableApps
-                    if candidates.isEmpty {
-                        Text("追加できる起動中のアプリはありません")
-                    }
-                    ForEach(candidates) { app in
-                        Button(app.name) {
-                            model.addExcludedApp(bundleID: app.bundleID, name: app.name)
-                        }
-                    }
-                    Divider()
-                    Button("その他のアプリを選ぶ…") { chooseApplications() }
-                } label: {
-                    Text("アプリを追加")
+                Button("アプリを追加…") {
+                    reloadRunningApps()
+                    isChoosingApp = true
                 }
-                .fixedSize()
+                .buttonStyle(LaneButtonStyle())
                 .help("起動中のアプリから選ぶか、アプリケーションフォルダから選びます")
+                .popover(isPresented: $isChoosingApp, arrowEdge: .bottom) {
+                    AppChooser(
+                        apps: addableApps,
+                        onChoose: { app in
+                            model.addExcludedApp(bundleID: app.bundleID, name: app.name)
+                            isChoosingApp = false
+                        },
+                        onChooseOther: {
+                            isChoosingApp = false
+                            // Let the popover close before the panel takes over.
+                            Task { @MainActor in
+                                chooseApplications()
+                            }
+                        }
+                    )
+                }
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(EdgeInsets(top: 20, leading: 24, bottom: 28, trailing: 24))
@@ -110,10 +116,10 @@ private struct ExcludedAppRow: View {
             AppInitialBadge(name: app.name)
             VStack(alignment: .leading, spacing: 0) {
                 Text(app.name)
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
                 Text(app.bundleID)
-                    .font(.lane(11))
+                    .laneText(11)
                     .foregroundStyle(Theme.sub)
                     .textSelection(.enabled)
             }
@@ -123,5 +129,74 @@ private struct ExcludedAppRow: View {
                 .accessibilityLabel("\(app.name)を除外から外す")
         }
         .frame(minHeight: 48)
+    }
+}
+
+/// The running apps that can be excluded, and a way to pick any other app.
+private struct AppChooser: View {
+    let apps: [RunningAppInfo]
+    let onChoose: (RunningAppInfo) -> Void
+    let onChooseOther: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FieldLabel("起動中のアプリ")
+                .padding(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+            if apps.isEmpty {
+                Text("追加できる起動中のアプリはありません")
+                    .laneText(13)
+                    .foregroundStyle(Theme.sub)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(apps) { app in
+                            AppChooserRow(app: app) { onChoose(app) }
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: 320)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Rectangle().fill(Theme.line).frame(height: 1)
+                .padding(.top, 6)
+            Button("その他のアプリを選ぶ…", action: onChooseOther)
+                .buttonStyle(PlainTextButtonStyle(color: Theme.accentInk, weight: .medium, size: 13, height: 36, horizontalPadding: 10))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+        }
+        .frame(width: 280)
+    }
+}
+
+private struct AppChooserRow: View {
+    let app: RunningAppInfo
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                AppInitialBadge(name: app.name)
+                Text(app.name)
+                    .font(.lane(13))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovering ? Theme.muted : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(app.bundleID)
     }
 }

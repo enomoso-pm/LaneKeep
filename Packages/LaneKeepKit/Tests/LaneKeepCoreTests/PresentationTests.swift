@@ -69,9 +69,11 @@ struct DisplayMapLayoutTests {
 
 @Suite("Wording")
 struct DisplayTextTests {
-    @Test("Display names in role order")
+    @Test("Display names from left to right")
     func displayNames() {
-        #expect(DisplayText.displayNames(Fixtures.homeDisplays) == "外部 27インチ ＋ 内蔵ディスプレイ")
+        // The built-in display is to the left of the main external one.
+        #expect(DisplayText.displayNames(Fixtures.homeDisplays) == "内蔵ディスプレイ ＋ 外部 27インチ")
+        #expect(DisplayText.displayNames(Fixtures.officeDisplays) == "左 24インチ ＋ 中央 27インチ ＋ 内蔵ディスプレイ")
         #expect(DisplayText.displayNames([Fixtures.builtinAlone]) == "内蔵ディスプレイ")
     }
 

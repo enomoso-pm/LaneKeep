@@ -9,11 +9,11 @@ struct OnboardingScreen: View {
             LaneIconView(icon: .permission, size: 48, color: Theme.accent)
             VStack(alignment: .leading, spacing: 6) {
                 Text("ウィンドウを動かす許可が必要です")
-                    .font(.lane(18, .bold))
+                    .laneText(18, .bold)
                     .foregroundStyle(Theme.ink)
                     .accessibilityAddTraits(.isHeader)
                 Text("他のアプリのウィンドウの位置を読み取って動かすために、アクセシビリティの許可を使います。キー入力や画面の内容は記録しません。")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -34,8 +34,7 @@ struct OnboardingScreen: View {
                 Button("あとで") {
                     model.onboardingDismissed = true
                 }
-                .buttonStyle(PlainTextButtonStyle(color: Theme.ink2))
-                .frame(height: 40)
+                .buttonStyle(PlainTextButtonStyle(color: Theme.ink, height: 40))
                 .disabled(model.isAccessibilityGranted)
             }
             .frame(maxWidth: .infinity)
@@ -50,7 +49,7 @@ struct OnboardingScreen: View {
                 .fill(granted ? Theme.accent : Theme.display2)
                 .frame(width: 10, height: 10)
             Text(granted ? "許可されました。一覧に進みます" : "まだ許可されていません")
-                .font(.lane(13))
+                .laneText(13)
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: 0)
         }
@@ -72,10 +71,9 @@ struct OnboardingScreen: View {
                     .frame(width: 22, height: 22)
                     .background(Theme.accentSoft, in: Circle())
                 Text(text)
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
             }
             .accessibilityElement(children: .combine)
         }

@@ -32,7 +32,7 @@ final class SettingsWindowController {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.moveToActiveSpace)
-        window.setContentSize(NSSize(width: 1000, height: 760))
+        window.setContentSize(NSSize(width: 1120, height: 860))
         window.center()
         window.setFrameAutosaveName("LaneKeepSettingsWindow")
         return window

@@ -19,14 +19,15 @@ struct WindowRuleTable: View {
                 frame: Text("位置とサイズ"),
                 launch: Text("閉じていたら")
             )
-            .font(.lane(12, .medium))
+            .laneText(12, .medium)
+            .lineLimit(1)
             .foregroundStyle(Theme.sub)
             .padding(.vertical, 8)
             .accessibilityElement(children: .ignore)
             if workspace.windows.isEmpty {
                 separator
                 Text("ウィンドウ規則がありません。「今の配置で上書き」で記録できます。")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.sub)
                     .frame(maxWidth: .infinity, minHeight: 56)
             }
@@ -56,7 +57,8 @@ struct WindowRuleTable: View {
     }
 }
 
-/// Lays out the five columns the same way in the header and in every row.
+/// Lays out the five columns the same way in the header and in every row: in proportion to the
+/// mock's column widths, each with 10 pt of padding on both sides like the mock's cells.
 private struct RuleColumns<App: View, Marker: View, Display: View, Frame: View, Launch: View>: View {
     let app: App
     let marker: Marker
@@ -64,13 +66,61 @@ private struct RuleColumns<App: View, Marker: View, Display: View, Frame: View, 
     let frame: Frame
     let launch: Launch
 
+    /// The widths of the mock's columns at its 848 pt wide table.
+    static var weights: [CGFloat] { [150, 182, 172, 235, 109] }
+    /// Enough for 「ミュージック」, 「最初のウィンドウ」, 「内蔵ディスプレイ」 and 「左51% 上67%、幅47% 高さ30%」.
+    static var minimums: [CGFloat] { [110, 130, 146, 196, 96] }
+
     var body: some View {
-        HStack(spacing: 0) {
-            app.frame(minWidth: 110, maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
-            marker.frame(minWidth: 120, maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
-            display.frame(width: 150, alignment: .leading).padding(.horizontal, 10)
-            frame.frame(width: 178, alignment: .leading).padding(.horizontal, 10)
-            launch.frame(width: 92, alignment: .leading).padding(.horizontal, 10)
+        let layout = TableColumnsLayout(weights: Self.weights, minimums: Self.minimums)
+        layout {
+            cell(app)
+            cell(marker)
+            cell(display)
+            cell(frame)
+            cell(launch)
+        }
+    }
+
+    private func cell(_ content: some View) -> some View {
+        content
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Places its subviews side by side in the widths `ColumnLayout` gives them.
+private struct TableColumnsLayout: Layout {
+    let weights: [CGFloat]
+    let minimums: [CGFloat]
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let minimumWidth = minimums.reduce(0, +)
+        let width: CGFloat
+        if let proposed = proposal.width {
+            width = proposed.isFinite ? max(proposed, minimumWidth) : proposed
+        } else {
+            width = minimumWidth
+        }
+        let widths = ColumnLayout.widths(total: width, weights: weights, minimums: minimums)
+        let height = zip(subviews, widths)
+            .map { subview, columnWidth in
+                subview.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height
+            }
+            .max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = ColumnLayout.widths(total: bounds.width, weights: weights, minimums: minimums)
+        var x = bounds.minX
+        for (subview, columnWidth) in zip(subviews, widths) {
+            subview.place(
+                at: CGPoint(x: x, y: bounds.midY),
+                anchor: .leading,
+                proposal: ProposedViewSize(width: columnWidth, height: bounds.height)
+            )
+            x += columnWidth
         }
     }
 }
@@ -107,6 +157,7 @@ private struct RuleRow: View {
                     Button("変更") { isEditingMarker = true }
                         .buttonStyle(.link)
                         .font(.lane(12))
+                        .fixedSize()
                 }
             }
             .popover(isPresented: $isEditingMarker, arrowEdge: .bottom) {
@@ -122,15 +173,17 @@ private struct RuleRow: View {
                 .font(.lane(12))
                 .foregroundStyle(Theme.sub)
                 .lineLimit(1)
-                .minimumScaleFactor(0.85),
+                .minimumScaleFactor(0.8),
             launch: Menu {
                 Button("起動する") { setLaunch(true) }
                 Button("何もしない") { setLaunch(false) }
             } label: {
                 Text(DisplayText.launchOption(rule.launchIfClosed))
                     .font(.lane(12))
+                    .foregroundStyle(Theme.sub)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(isHovering || isSelected ? .visible : .hidden)
             .fixedSize()
             .help("アプリが起動していないときの動き")
         )

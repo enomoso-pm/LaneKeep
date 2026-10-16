@@ -12,7 +12,7 @@ struct GeneralSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("一般")
-                    .font(.lane(20, .bold))
+                    .laneText(20, .bold)
                     .foregroundStyle(Theme.ink)
                     .accessibilityAddTraits(.isHeader)
                     .padding(.bottom, 4)
@@ -23,7 +23,7 @@ struct GeneralSettingsView: View {
                 permissionCard
                 dataCard
                 Text("LaneKeep \(Self.version)")
-                    .font(.lane(12))
+                    .laneText(12)
                     .foregroundStyle(Theme.sub)
             }
             .frame(maxWidth: 680, alignment: .leading)
@@ -40,7 +40,7 @@ struct GeneralSettingsView: View {
                 set: { model.loginItem.setEnabled($0) }
             )) {
                 Text("ログイン時に起動")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
             }
             .toggleStyle(LaneSwitchStyle())
@@ -67,7 +67,7 @@ struct GeneralSettingsView: View {
                 set: { model.setAutoRestoreEnabled($0) }
             )) {
                 Text("つないだら自動で復元")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
             }
             .toggleStyle(LaneSwitchStyle())
@@ -80,15 +80,18 @@ struct GeneralSettingsView: View {
         SettingsCard(title: "ショートカット") {
             HStack(spacing: 8) {
                 Text("メニューを開く")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 8)
-                KeyboardShortcuts.Recorder(for: ShortcutCenter.toggleMenu, onChange: { _ in
-                    model.shortcutRecorded(for: ShortcutCenter.toggleMenu)
-                })
-                .fixedSize()
+                ShortcutButton(
+                    title: "メニューを開く",
+                    text: model.menuShortcutText,
+                    name: ShortcutCenter.toggleMenu,
+                    onChange: { model.shortcutRecorded(for: ShortcutCenter.toggleMenu) }
+                )
                 Button("初期設定に戻す") { model.resetMenuShortcut() }
                     .buttonStyle(LaneButtonStyle(height: 28))
+                    .disabled(model.menuShortcutText == ShortcutCenter.defaultMenuShortcut.description)
                     .help("⌃⌥L に戻します")
             }
             HintText("ワークスペースごとの復元のショートカットは、各ワークスペースのページで変えられます。")
@@ -122,7 +125,7 @@ struct GeneralSettingsView: View {
                     .fill(model.isAccessibilityGranted ? Theme.accent : Theme.display2)
                     .frame(width: 10, height: 10)
                 Text(model.isAccessibilityGranted ? "許可されています" : "まだ許可されていません")
-                    .font(.lane(13))
+                    .laneText(13)
                     .foregroundStyle(Theme.ink)
                 Spacer(minLength: 8)
                 if !model.isAccessibilityGranted {
@@ -139,7 +142,7 @@ struct GeneralSettingsView: View {
         SettingsCard(title: "保存データ") {
             HStack(spacing: 8) {
                 Text(model.dataDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                    .font(.lane(12))
+                    .laneText(12)
                     .foregroundStyle(Theme.ink2)
                     .lineLimit(1)
                     .truncationMode(.middle)

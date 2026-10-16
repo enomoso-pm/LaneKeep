@@ -5,9 +5,10 @@ import CoreGraphics
 
 /// Wording shared by the menu bar popover, the settings window and the command-line tool.
 public enum DisplayText {
-    /// 「外部 27インチ ＋ 内蔵ディスプレイ」 (displays in role order).
+    /// 「内蔵ディスプレイ ＋ 外部 27インチ」: the displays from left to right, the order in which the
+    /// display glyph and the map draw them.
     public static func displayNames<Display: DisplayDescribing>(_ displays: [Display]) -> String {
-        DisplayRoles.ordered(displays).map(\.name).joined(separator: " ＋ ")
+        DisplayGeometry.spatiallyOrdered(displays).map(\.name).joined(separator: " ＋ ")
     }
 
     /// 「2画面、6アプリ」; when an app has several windows: 「2画面、5アプリ・6ウィンドウ」.

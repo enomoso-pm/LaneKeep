@@ -7,8 +7,14 @@ struct CaptureScreen: View {
     @Bindable var session: CaptureSession
     var onCancel: () -> Void
     var onSave: () -> Void
+    /// Told how tall the screen would be without scrolling, so that the menu bar window can grow
+    /// to show everything when the screen has room, as the mock does.
+    var onIdealHeightChange: ((CGFloat) -> Void)?
 
     @FocusState private var isNameFocused: Bool
+    @State private var headerHeight: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
 
     private var isOverwrite: Bool {
         if case .overwrite = session.mode {
@@ -20,6 +26,7 @@ struct CaptureScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+                .background(HeightReader(height: $headerHeight))
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if !isOverwrite {
@@ -32,6 +39,7 @@ struct CaptureScreen: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
+                .background(HeightReader(height: $contentHeight))
             }
             .scrollBounceBehavior(.basedOnSize)
             saveButton
@@ -39,6 +47,10 @@ struct CaptureScreen: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(Theme.line).frame(height: 1)
                 }
+                .background(HeightReader(height: $footerHeight))
+        }
+        .onChange(of: headerHeight + contentHeight + footerHeight) { _, height in
+            onIdealHeightChange?(height.rounded(.up))
         }
         .onExitCommand(perform: onCancel)
         .onAppear {
@@ -161,7 +173,7 @@ struct CaptureScreen: View {
             .padding(.horizontal, 12)
             .laneBox()
             Text("別のデスクトップにあるウィンドウと、しまってあるウィンドウは一覧に出ません。")
-                .font(.lane(11))
+                .laneText(11)
                 .foregroundStyle(Theme.sub)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -170,13 +182,13 @@ struct CaptureScreen: View {
     private var options: some View {
         VStack(spacing: 0) {
             Toggle(isOn: $session.launchIfClosed) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text("閉じているアプリは起動してから配置")
                         .font(.lane(13))
                         .foregroundStyle(Theme.ink)
                     if isOverwrite {
                         Text("新しく加わるウィンドウに使います")
-                            .font(.lane(11))
+                            .laneText(11)
                             .foregroundStyle(Theme.sub)
                     }
                 }
@@ -247,8 +259,8 @@ private struct CandidateRow: View {
                 Spacer(minLength: 8)
                 DisplayLabel(name: displayName, role: role)
             }
-            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-            .padding(.vertical, 2)
+            // 40 pt per row together with the divider, as in the mock.
+            .frame(maxWidth: .infinity, minHeight: 39, alignment: .leading)
             .contentShape(Rectangle())
         }
         .toggleStyle(.checkbox)
@@ -266,15 +278,28 @@ struct FieldLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.lane(12))
+            .laneText(12)
             .foregroundStyle(Theme.sub)
+    }
+}
+
+/// Keeps `height` up to date with the height of the view it is the background of.
+struct HeightReader: View {
+    @Binding var height: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onChange(of: proxy.size.height, initial: true) { _, newHeight in
+                    height = newHeight
+                }
+        }
     }
 }
 
 #if DEBUG
 #Preview("今の配置を保存") {
-    CaptureScreen(session: .preview(), onCancel: {}, onSave: {})
-        .frame(width: 360, height: 720)
-        .background(Theme.window)
+    PopoverRootView()
+        .environment(AppModel.preview(.capture))
 }
 #endif

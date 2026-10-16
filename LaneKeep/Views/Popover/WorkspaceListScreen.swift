@@ -45,12 +45,12 @@ struct WorkspaceListScreen: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 DisplayGlyph(displays: MapDisplay.from(model.displays))
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text("接続中のディスプレイ")
-                        .font(.lane(12))
+                        .laneText(12)
                         .foregroundStyle(Theme.sub)
                     Text(model.currentDisplaysText)
-                        .font(.lane(14, .semibold))
+                        .laneText(14, .semibold)
                         .foregroundStyle(Theme.ink)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -92,12 +92,12 @@ struct WorkspaceListScreen: View {
     private var sectionHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("ワークスペース")
-                .fontWeight(.semibold)
+                .laneText(12, .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             Text("\(model.workspaces.count)件")
+                .laneText(12)
         }
-        .font(.lane(12))
         .foregroundStyle(Theme.sub)
         .padding(EdgeInsets(top: 16, leading: 16, bottom: 8, trailing: 16))
     }
@@ -108,10 +108,10 @@ struct WorkspaceListScreen: View {
             VStack(spacing: 8) {
                 LaneIconView(icon: .workspace(.display), size: 28, color: Theme.sub)
                 Text("まだワークスペースがありません")
-                    .font(.lane(13, .semibold))
+                    .laneText(13, .semibold)
                     .foregroundStyle(Theme.ink2)
                 Text("ウィンドウを並べたら「今の配置を保存…」で記録しましょう。次からはワンクリックで、画面をつないだときは自動で元に戻ります。")
-                    .font(.lane(12))
+                    .laneText(12)
                     .foregroundStyle(Theme.sub)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -149,6 +149,7 @@ struct WorkspaceListScreen: View {
             HStack {
                 if let shortcut = model.menuShortcutText {
                     Text("\(shortcut) でこのメニューを開く")
+                        .laneText(12)
                 } else {
                     Button("メニューを開くショートカットを設定…") { model.openSettings(.general) }
                         .buttonStyle(PlainTextButtonStyle(size: 12))
@@ -156,10 +157,9 @@ struct WorkspaceListScreen: View {
                 }
                 Spacer()
                 Button("終了") { model.quit() }
-                    .buttonStyle(PlainTextButtonStyle())
+                    .buttonStyle(PlainTextButtonStyle(height: Theme.Size.buttonHeight, horizontalPadding: 12))
                     .keyboardShortcut("q", modifiers: .command)
             }
-            .font(.lane(12))
             .foregroundStyle(Theme.sub)
         }
         .padding(12)
@@ -187,13 +187,13 @@ struct WorkspaceCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 WorkspaceTile(color: workspace.color, icon: workspace.icon)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(workspace.name)
-                        .font(.lane(14, .semibold))
+                        .laneText(14, .semibold)
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)
                     Text(DisplayText.workspaceMeta(workspace))
-                        .font(.lane(12))
+                        .laneText(12)
                         .foregroundStyle(Theme.sub)
                 }
                 .accessibilityElement(children: .combine)
@@ -249,27 +249,27 @@ struct CardStateView: View {
             VStack(alignment: .leading, spacing: 6) {
                 LaneProgressBar(fraction: progress.fraction)
                 Text("配置中… \(progress.completed) / \(progress.total)")
-                    .font(.lane(12))
+                    .laneText(12)
                     .foregroundStyle(Theme.ink2)
                     .monospacedDigit()
             }
         case .note(let text):
             Text(text)
-                .font(.lane(12))
+                .laneText(12)
                 .foregroundStyle(Theme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         case .matchesCurrent:
             HStack(alignment: .top, spacing: 6) {
                 LaneIconView(icon: .check, size: 14)
-                    .padding(.top, 1)
+                    .padding(.top, 2)
                 Text("今つながっている構成と一致")
+                    .laneText(12)
             }
-            .font(.lane(12))
             .foregroundStyle(Theme.accentInk)
             .accessibilityElement(children: .combine)
         case .missingDisplays(let count):
             Text(DisplayText.missingDisplaysNote(count: count, fallback: fallback))
-                .font(.lane(12))
+                .laneText(12)
                 .foregroundStyle(Theme.warn)
                 .fixedSize(horizontal: false, vertical: true)
         case .plain:
@@ -287,7 +287,7 @@ struct Banner<Action: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Text(text)
-                .font(.lane(12))
+                .laneText(12)
                 .foregroundStyle(color)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
