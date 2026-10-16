@@ -174,7 +174,7 @@ struct CaptureScreen: View {
             }
             .padding(.horizontal, 12)
             .laneBox()
-            Text("別のデスクトップにあるウィンドウと、しまってあるウィンドウは一覧に出ません。")
+            Text("別のデスクトップや、しまってあるウィンドウは対象外です")
                 .laneText(11)
                 .foregroundStyle(Theme.sub)
                 .fixedSize(horizontal: false, vertical: true)
