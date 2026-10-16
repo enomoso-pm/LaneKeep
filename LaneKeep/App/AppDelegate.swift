@@ -3,6 +3,12 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if SnapshotRenderer.isRequested {
+            SnapshotRenderer.renderAndQuit()
+            return
+        }
+        #endif
         // Two copies would both restore windows when displays change.
         if isAnotherInstanceRunning() {
             NSApp.terminate(nil)

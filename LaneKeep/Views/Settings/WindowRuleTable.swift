@@ -185,7 +185,6 @@ private struct MarkerEditor: View {
             HintText("タイトルにこの文字を含む\(rule.appName)のウィンドウを選びます。空欄なら\(rule.index == 0 ? "最初" : "\(rule.index + 1)番目")のウィンドウを使います。")
             TextField("タイトルに含む文字", text: $text, prompt: Text("例: プロジェクト名"))
                 .textFieldStyle(.roundedBorder)
-                .onSubmit { save() }
             if !suggestions.isEmpty {
                 FieldLabel("今開いているウィンドウ")
                 VStack(alignment: .leading, spacing: 2) {

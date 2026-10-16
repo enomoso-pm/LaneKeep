@@ -81,3 +81,10 @@ struct OnboardingScreen: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("権限の案内") {
+    PopoverRootView()
+        .environment(AppModel.preview(.noPermission))
+}
+#endif

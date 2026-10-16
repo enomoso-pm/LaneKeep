@@ -172,3 +172,11 @@ struct HintText: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
+
+#if DEBUG
+#Preview("設定") {
+    SettingsRootView()
+        .environment(AppModel.preview())
+        .frame(width: 1000, height: 820)
+}
+#endif

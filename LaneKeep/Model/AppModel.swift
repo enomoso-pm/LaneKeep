@@ -134,11 +134,21 @@ final class AppModel {
 
     func shortcutText(for workspace: Workspace) -> String? {
         _ = shortcutRevision
+        #if DEBUG
+        if let text = PreviewData.shortcutTexts[workspace.id] {
+            return text
+        }
+        #endif
         return shortcuts.text(for: workspace)
     }
 
     var menuShortcutText: String? {
         _ = shortcutRevision
+        #if DEBUG
+        if let text = PreviewData.menuShortcutText {
+            return text
+        }
+        #endif
         return shortcuts.menuShortcutText
     }
 
@@ -177,6 +187,15 @@ final class AppModel {
         }
         monitor.start()
         displayMonitor = monitor
+
+        // Without the permission LaneKeep can do nothing, and a menu bar app shows no window on
+        // its own: open the menu so that the permission screen is the first thing the user sees.
+        if !isAccessibilityGranted {
+            Task {
+                try? await Task.sleep(for: .milliseconds(600))
+                StatusItemBridge.openMenu()
+            }
+        }
     }
 
     /// Writes pending changes immediately (on quit).
@@ -415,6 +434,8 @@ final class AppModel {
     }
 
     func saveCapture(_ session: CaptureSession) {
+        // Return and the save button can both fire; only the current session is saved, once.
+        guard captureSession === session else { return }
         let selected = session.selectedCandidates
         guard !selected.isEmpty else { return }
         let fallbackName = CaptureBuilder.suggestedName(for: session.displays, existingNames: workspaces.map(\.name))
@@ -634,3 +655,47 @@ final class AppModel {
         }
     }
 }
+
+#if DEBUG
+extension AppModel {
+    enum PreviewScenario {
+        case standard
+        case restoring
+        case finished
+        case noPermission
+        case empty
+    }
+
+    /// A model filled with the sample data of the UI mock, for previews and UI snapshots. It is
+    /// not started: nothing is read from or written to disk.
+    static func preview(_ scenario: PreviewScenario = .standard) -> AppModel {
+        PreviewData.installShortcutTexts()
+        let model = AppModel()
+        model.isStarted = true
+        model.displays = PreviewData.homeDisplays
+        model.workspaces = scenario == .empty ? [] : PreviewData.workspaces
+        model.isAccessibilityGranted = scenario != .noPermission
+        model.preferences.excludedApps = [
+            ExcludedApp(bundleID: "com.apple.finder", name: "Finder"),
+            ExcludedApp(bundleID: "com.apple.systempreferences", name: "システム設定")
+        ]
+        model.settingsPane = scenario == .empty ? .general : .workspace(PreviewData.home.id)
+        switch scenario {
+        case .restoring:
+            model.activeRestore = ActiveRestore(
+                workspaceID: PreviewData.home.id,
+                progress: RestoreProgress(completed: 3, total: 6)
+            )
+        case .finished:
+            model.notes = [
+                PreviewData.home.id: "6件すべて配置しました",
+                PreviewData.office.id: "8件を配置しました。うち2件はメイン画面に寄せています",
+                PreviewData.laptop.id: "3件を配置しました。Slackのウィンドウが見つからなかったので起動しています"
+            ]
+        case .standard, .noPermission, .empty:
+            break
+        }
+        return model
+    }
+}
+#endif

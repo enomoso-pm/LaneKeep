@@ -76,7 +76,6 @@ struct CaptureScreen: View {
                 .foregroundStyle(Theme.ink)
                 .labelsHidden()
                 .focused($isNameFocused)
-                .onSubmit { save() }
                 .padding(.horizontal, 10)
                 .frame(height: 36)
                 .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
@@ -271,3 +270,11 @@ struct FieldLabel: View {
             .foregroundStyle(Theme.sub)
     }
 }
+
+#if DEBUG
+#Preview("今の配置を保存") {
+    CaptureScreen(session: .preview(), onCancel: {}, onSave: {})
+        .frame(width: 360, height: 720)
+        .background(Theme.window)
+}
+#endif

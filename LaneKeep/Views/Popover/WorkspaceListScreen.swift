@@ -298,3 +298,25 @@ struct Banner<Action: View>: View {
         .laneBox()
     }
 }
+
+#if DEBUG
+#Preview("一覧") {
+    PopoverRootView()
+        .environment(AppModel.preview())
+}
+
+#Preview("復元中") {
+    PopoverRootView()
+        .environment(AppModel.preview(.restoring))
+}
+
+#Preview("復元の結果") {
+    PopoverRootView()
+        .environment(AppModel.preview(.finished))
+}
+
+#Preview("ワークスペースなし") {
+    PopoverRootView()
+        .environment(AppModel.preview(.empty))
+}
+#endif

@@ -5,26 +5,17 @@ import LaneKeepCore
 
 /// Reads the windows that are on screen (spec §6.1).
 public enum WindowCatalog {
-    /// Standard windows of all regular apps (minimized and full-screen ones included, marked as
-    /// such), in app order and Accessibility order within each app.
+    /// Standard windows of all regular apps (minimized ones included and marked as such, full-screen
+    /// ones left out), in app order and Accessibility order within each app.
     ///
     /// Windows on other desktops are not visible to the Accessibility API for most apps (a known
-    /// limitation, spec §6.1). The calls run concurrently and off the main thread, so a hanging app
-    /// only delays the result by the messaging timeout.
+    /// limitation, spec §6.1). The Accessibility calls run off the main thread, one app after the
+    /// other; an app that does not respond only costs the messaging timeout.
     public static func snapshot() async -> [WindowSnapshot] {
         let apps = await MainActor.run { RunningApps.regularApps() }
-        return await withTaskGroup(of: (Int, [WindowSnapshot]).self) { group in
-            for (position, app) in apps.enumerated() {
-                group.addTask {
-                    (position, windows(of: app))
-                }
-            }
-            var byPosition: [Int: [WindowSnapshot]] = [:]
-            for await (position, windows) in group {
-                byPosition[position] = windows
-            }
-            return apps.indices.flatMap { byPosition[$0] ?? [] }
-        }
+        return await Task.detached(priority: .userInitiated) {
+            apps.flatMap { windows(of: $0) }
+        }.value
     }
 
     /// The windows of one app.

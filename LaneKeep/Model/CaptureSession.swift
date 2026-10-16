@@ -68,3 +68,17 @@ final class CaptureSession: Identifiable {
         candidates.filter { $0.window.bundleID == candidate.window.bundleID }.count > 1
     }
 }
+
+#if DEBUG
+extension CaptureSession {
+    /// A session showing the windows of the mock's home workspace, for previews and UI snapshots.
+    static func preview() -> CaptureSession {
+        let session = CaptureSession(mode: .new, name: "自宅デスク", color: .blue)
+        session.displays = PreviewData.homeDisplays
+        session.candidates = CaptureBuilder.candidates(from: PreviewData.homeWindows, displays: PreviewData.homeDisplays)
+        session.selectedIDs = Set(session.candidates.map(\.id))
+        session.isLoading = false
+        return session
+    }
+}
+#endif

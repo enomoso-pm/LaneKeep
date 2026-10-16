@@ -57,3 +57,19 @@ jobs:
             build
       - name: Show the resolved packages
         run: cat LaneKeep.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved || true
+      - name: Render UI snapshots
+        # A debug build renders every screen with sample data (see SnapshotRenderer.swift).
+        if: matrix.xcode == '26.3'
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          xcodebuild \
+            -project LaneKeep.xcodeproj \
+            -scheme LaneKeep \
+            -configuration Debug \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build-debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -3
+          build-debug/Build/Products/Debug/LaneKeep.app/Contents/MacOS/LaneKeep \
+            --render-ui-snapshots "$RUNNER_TEMP/snapshots" | grep '^LKSNAP' || true
