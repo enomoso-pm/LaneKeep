@@ -28,11 +28,14 @@ public struct SystemWindow<Handle: Hashable> {
     public var handle: Handle
     public var title: String
     public var isMinimized: Bool
+    /// Accessibility coordinates; `nil` when the app did not say.
+    public var frame: CGRect?
 
-    public init(handle: Handle, title: String, isMinimized: Bool) {
+    public init(handle: Handle, title: String, isMinimized: Bool, frame: CGRect? = nil) {
         self.handle = handle
         self.title = title
         self.isMinimized = isMinimized
+        self.frame = frame
     }
 }
 
@@ -53,8 +56,10 @@ public protocol WindowSystem: AnyObject {
     func unhide(_ bundleID: String) async
 
     /// The app's standard, non-full-screen windows in Accessibility order (minimized ones
-    /// included). Empty when the app is not running or exposes no windows.
-    func windows(of bundleID: String) async -> [SystemWindow<Handle>]
+    /// included). Empty when the app is not running or exposes no windows; `nil` when the app did
+    /// not answer in time (it is busy, e.g. right after a display change), so that the engine asks
+    /// again instead of concluding that the window is gone.
+    func windows(of bundleID: String) async -> [SystemWindow<Handle>]?
 
     /// Called before and after moving windows of an app, e.g. to switch off
     /// `AXEnhancedUserInterface`, which makes some apps animate and ignore moves.

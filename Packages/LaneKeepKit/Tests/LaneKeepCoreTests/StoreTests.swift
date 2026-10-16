@@ -153,4 +153,73 @@ struct StoreTests {
     func defaultDirectory() {
         #expect(LaneKeepStore.defaultDirectory.lastPathComponent == "LaneKeep")
     }
+
+    @Test("Problems are reported, and read-only loads leave the file where it is")
+    func readOnlyLoad() throws {
+        let store = try makeStore()
+        try Data("{ not json".utf8).write(to: store.workspacesURL)
+
+        let load = store.loadWorkspaces(unreadableFile: .leave)
+
+        #expect(load.value.isEmpty)
+        #expect(load.problem == .unreadable)
+        #expect(load.backupOfUnreadableFile == nil)
+        #expect(try files(in: store) == ["workspaces.json"])
+    }
+
+    @Test("Partly readable files report how many entries were left out")
+    func partlyReadableProblem() throws {
+        let store = try makeStore()
+        let json = """
+        {"version": 1, "workspaces": [{"name": "broken", "windows": [{"bundleID": 42}]}, {"name": "ok", "displays": [], "windows": []}]}
+        """
+        try Data(json.utf8).write(to: store.workspacesURL)
+
+        let load = store.loadWorkspaces(unreadableFile: .leave)
+
+        #expect(load.value.map(\.name) == ["ok"])
+        #expect(load.problem == .partlyUnreadable(entries: 1))
+        #expect(try files(in: store) == ["workspaces.json"])
+    }
+
+    @Test("An object without a workspaces list is unreadable, not empty")
+    func missingWorkspacesKey() throws {
+        let store = try makeStore()
+        try Data(#"{"version": 1, "Workspaces": []}"#.utf8).write(to: store.workspacesURL)
+
+        let load = store.loadWorkspaces()
+
+        #expect(load.problem == .unreadable)
+        #expect(load.backupOfUnreadableFile != nil)
+    }
+
+    @Test("Reads and writes report the version of the file")
+    func stamps() throws {
+        let store = try makeStore()
+        #expect(store.workspacesStamp == nil)
+
+        let written = try store.saveWorkspaces([Fixtures.laptopWorkspace])
+        #expect(written != nil)
+        #expect(written == store.workspacesStamp)
+        #expect(store.loadWorkspaces().stamp == written)
+
+        try store.saveWorkspaces([Fixtures.laptopWorkspace, Fixtures.homeWorkspace])
+        #expect(store.workspacesStamp != written)
+    }
+
+    @Test("A display listed twice in a file is read once")
+    func duplicateDisplays() throws {
+        let store = try makeStore()
+        let json = """
+        [{"name": "dup", "displays": [{"uuid": "A", "name": "first"}, {"uuid": "A", "name": "second"}], "windows": []}]
+        """
+        try Data(json.utf8).write(to: store.workspacesURL)
+
+        let workspace = try #require(store.loadWorkspaces().value.first)
+
+        #expect(workspace.displays.map(\.name) == ["first"])
+        // Drawing it does not trip over the duplicate either.
+        let layout = DisplayMapLayout(displays: MapDisplay.from(workspace.displays), windows: [], size: CGSize(width: 300, height: 150))
+        #expect(layout.displays.count == 1)
+    }
 }

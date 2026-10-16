@@ -77,6 +77,14 @@ struct DisplayTextTests {
         #expect(DisplayText.displayNames([Fixtures.builtinAlone]) == "内蔵ディスプレイ")
     }
 
+    @Test("Percentages of broken values do not crash")
+    func brokenPercent() {
+        #expect(DisplayText.percent(0.5) == "50%")
+        #expect(DisplayText.percent(.infinity) == "–")
+        #expect(DisplayText.percent(.nan) == "–")
+        #expect(DisplayText.percent(1e300) == "–")
+    }
+
     @Test("Workspace meta line")
     func meta() {
         #expect(DisplayText.workspaceMeta(Fixtures.homeWorkspace) == "2画面、6アプリ")

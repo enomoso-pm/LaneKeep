@@ -19,43 +19,73 @@ enum CLI {
       move <アプリ> --frame x,y,w,h      ウィンドウを画面の指定位置へ動かす
            [--display 番号|UUID]         x,y,w,h は可視領域に対する割合（0.5 または 50%）
            [--index N | --title 文字]    番号は displays の表示順。省略時はメイン画面
+                                        N は windows の「#N」。省略時は #0
       workspaces                        保存済みのワークスペース
-      save <名前> [--no-launch] [--no-auto-restore]
-                                        今の配置を新しいワークスペースとして保存
+      save <名前> [--replace] [--no-launch] [--no-auto-restore]
+                                        今の配置をワークスペースとして保存
+                                        同じ名前があるときは --replace で上書き
       restore <名前|番号>               ワークスペースを復元
       permission [--prompt]             アクセシビリティの許可を確認（--prompt で許可を求める）
 
-    LaneKeep アプリの起動中に save した内容は、アプリを再起動すると一覧に出ます。
+    LaneKeep アプリの起動中に保存した内容は、次にアプリのメニューを開いたときに一覧に出ます。
     """
 
     static func run(_ arguments: [String]) async -> Int32 {
         AccessibilityTuning.configureMessagingTimeout()
-        var arguments = Arguments(Array(arguments.dropFirst()))
+        var arguments = CommandLineArguments(Array(arguments.dropFirst()))
         guard let command = arguments.next() else {
             print(usage)
             return 0
         }
-        switch command {
-        case "displays":
-            return displays(json: arguments.flag("--json"))
-        case "windows":
-            return await windows(all: arguments.flag("--all"), json: arguments.flag("--json"))
-        case "move":
-            return await move(&arguments)
-        case "workspaces":
-            return workspaces()
-        case "save":
-            return await save(&arguments)
-        case "restore":
-            return await restore(&arguments)
-        case "permission":
-            return permission(prompt: arguments.flag("--prompt"))
-        case "help", "-h", "--help":
-            print(usage)
-            return 0
-        default:
-            fail("不明なコマンドです: \(command)\n\n\(usage)")
+        do {
+            switch command {
+            case "displays":
+                let json = arguments.flag("--json")
+                try finishParsing(arguments)
+                return displays(json: json)
+            case "windows":
+                let all = arguments.flag("--all")
+                let json = arguments.flag("--json")
+                try finishParsing(arguments)
+                return await windows(all: all, json: json)
+            case "move":
+                return try await move(&arguments)
+            case "workspaces":
+                try finishParsing(arguments)
+                return workspaces()
+            case "save":
+                return try await save(&arguments)
+            case "restore":
+                return try await restore(&arguments)
+            case "permission":
+                let prompt = arguments.flag("--prompt")
+                try finishParsing(arguments)
+                return permission(prompt: prompt)
+            case "help", "-h", "--help":
+                print(usage)
+                return 0
+            default:
+                fail("不明なコマンドです: \(command)\n\n\(usage)")
+                return 64
+            }
+        } catch let error as ArgumentError {
+            fail("\(error.message)\nlanekeep help で使い方を表示します。")
             return 64
+        } catch let error as UsageError {
+            fail(error.message)
+            return 64
+        } catch {
+            fail(error.localizedDescription)
+            return 1
+        }
+    }
+
+    /// Fails on options or values that no part of the command used.
+    static func finishParsing(_ arguments: CommandLineArguments) throws {
+        var rest = arguments
+        try rest.rejectUnknownOptions()
+        if let extra = rest.next() {
+            throw UsageError("余分な引数です: \(extra)")
         }
     }
 
@@ -92,8 +122,8 @@ enum CLI {
         let displays = ScreenReader.currentDisplays()
         let snapshots = await WindowCatalog.snapshot()
         let candidates = CaptureBuilder.candidates(from: snapshots, displays: displays)
-        let names = Dictionary(uniqueKeysWithValues: displays.map { ($0.uuid, $0.name) })
-        let byID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        let names = Dictionary(displays.map { ($0.uuid, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let byID = Dictionary(candidates.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let listed = all ? snapshots : candidates.map(\.window)
 
         if json {
@@ -131,21 +161,38 @@ enum CLI {
         return 0
     }
 
-    static func move(_ arguments: inout Arguments) async -> Int32 {
-        guard requirePermission() else { return 2 }
+    static func move(_ arguments: inout CommandLineArguments) async throws -> Int32 {
         // Options first, so that their values are not taken for the app name.
-        let frameText = arguments.value(for: "--frame")
-        let displayQuery = arguments.value(for: "--display")
-        let index = arguments.value(for: "--index").flatMap { Int($0) } ?? 0
-        let title = arguments.value(for: "--title")
+        let frameText = try arguments.value(for: "--frame")
+        let displayQuery = try arguments.value(for: "--display")
+        let index = try arguments.integer(for: "--index")
+        let title = try arguments.value(for: "--title")
         guard let appQuery = arguments.next() else {
-            fail("動かすアプリを指定してください（例: lanekeep move Safari --frame 0,0,0.5,1）")
-            return 64
+            throw UsageError("動かすアプリを指定してください（例: lanekeep move Safari --frame 0,0,0.5,1）")
         }
-        guard let frameText, let relative = parseFrame(frameText) else {
-            fail("--frame x,y,w,h を指定してください（可視領域に対する割合。例: 0,0,0.5,1 または 0,0,50%,100%）")
-            return 64
+        try finishParsing(arguments)
+        guard let frameText else {
+            throw UsageError("--frame x,y,w,h を指定してください（可視領域に対する割合。例: 0,0,0.5,1 または 0,0,50%,100%）")
         }
+        let relative: CGRect
+        switch RelativeFrameArgument.parse(frameText) {
+        case .success(let frame):
+            relative = frame
+        case .failure(.format):
+            throw UsageError("--frame は x,y,w,h の4つの数で指定してください（例: 0,0,0.5,1 または 0,0,50%,100%）")
+        case .failure(.outOfRange(let looksLikePercent)):
+            throw UsageError(looksLikePercent
+                ? "--frame の値は 0〜1 の割合か、% を付けて指定してください（例: 0,0,50%,100%）"
+                : "--frame の範囲が画面からはみ出しています（x + w と y + h は 1 以下）")
+        }
+        if let index, index < 0 {
+            throw UsageError("--index は 0 以上の番号で指定してください。")
+        }
+        if index != nil, title != nil {
+            throw UsageError("--index と --title はどちらか一方だけ指定してください。")
+        }
+        guard requirePermission() else { return 2 }
+
         let displays = DisplayRoles.ordered(ScreenReader.currentDisplays())
         guard let display = selectDisplay(displayQuery, among: displays) else {
             fail("ディスプレイが見つかりません。lanekeep displays で番号か UUID を確認してください。")
@@ -155,17 +202,38 @@ enum CLI {
             fail("起動中のアプリ「\(appQuery)」が見つかりません。")
             return 1
         }
+        // Make sure the window that was asked for exists, rather than moving another one.
+        guard let windows = await Task.detached(operation: { WindowCatalog.windows(of: app) }).value else {
+            fail("\(app.name) が応答しません。少し待ってからもう一度試してください。")
+            return 1
+        }
+        if let title {
+            guard windows.contains(where: { $0.title.localizedCaseInsensitiveContains(title) }) else {
+                fail("\(app.name) にタイトルに「\(title)」を含むウィンドウはありません。lanekeep windows で確認してください。")
+                return 1
+            }
+        } else {
+            let wanted = index ?? 0
+            guard windows.contains(where: { $0.indexInApp == wanted }) else {
+                fail(windows.isEmpty
+                    ? "\(app.name) にはウィンドウがありません。"
+                    : "\(app.name) のウィンドウ #\(wanted) はありません（#0〜#\(windows.count - 1)）。lanekeep windows で確認してください。")
+                return 1
+            }
+        }
+
         let rule = WindowRule(
             bundleID: app.bundleID,
             appName: app.name,
             titleContains: title,
-            index: max(0, index),
+            index: index ?? 0,
             displayUUID: display.uuid,
             relativeFrame: relative,
             launchIfClosed: false
         )
         let workspace = Workspace(name: "move", displays: displays.map(DisplayInfo.init), windows: [rule])
-        let report = await LiveRestore.run(RestoreRequest(workspace: workspace, displays: displays, fallback: .mainDisplay))
+        let request = RestoreRequest(workspace: workspace, displays: displays, fallback: .mainDisplay, matching: .exactIndex)
+        let report = await LiveRestore.run(request)
         guard let outcome = report.results.first?.outcome else { return 1 }
         switch outcome {
         case .placed(let frame, _):
@@ -178,10 +246,12 @@ enum CLI {
     }
 
     static func workspaces() -> Int32 {
-        let workspaces = LaneKeepStore().loadWorkspaces().value
+        let load = LaneKeepStore().loadWorkspaces(unreadableFile: .leave)
+        warnAbout(load, file: "workspaces.json")
+        let workspaces = load.value
         guard !workspaces.isEmpty else {
             print("保存済みのワークスペースはありません。")
-            return 0
+            return load.problem == nil ? 0 : 1
         }
         let displays = ScreenReader.currentDisplays()
         for (number, workspace) in workspaces.enumerated() {
@@ -203,70 +273,124 @@ enum CLI {
         return 0
     }
 
-    static func save(_ arguments: inout Arguments) async -> Int32 {
-        guard requirePermission() else { return 2 }
+    static func save(_ arguments: inout CommandLineArguments) async throws -> Int32 {
+        let replace = arguments.flag("--replace")
         let launch = !arguments.flag("--no-launch")
         let autoRestore = !arguments.flag("--no-auto-restore")
-        guard let name = arguments.next() else {
-            fail("ワークスペースの名前を指定してください。")
-            return 64
+        guard let rawName = arguments.next() else {
+            throw UsageError("ワークスペースの名前を指定してください。")
         }
+        try finishParsing(arguments)
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw UsageError("ワークスペースの名前を指定してください。")
+        }
+        guard requirePermission() else { return 2 }
+
         let store = LaneKeepStore()
-        var workspaces = store.loadWorkspaces().value
+        let load = store.loadWorkspaces(unreadableFile: .leave)
+        guard load.problem == nil else {
+            warnAbout(load, file: "workspaces.json")
+            fail("読めない部分を消してしまわないよう、保存しませんでした。LaneKeep アプリを起動すると、読めないファイルを残したうえで読み直します。")
+            return 1
+        }
+        var workspaces = load.value
+        let existing = WorkspaceLookup.named(name, in: workspaces).first
+        if existing != nil, !replace {
+            fail("「\(name)」はすでにあります。今の配置で上書きするには --replace を付けてください。")
+            return 1
+        }
+        let preferences = store.loadPreferences(unreadableFile: .leave)
+        warnAbout(preferences, file: "preferences.json")
         let displays = ScreenReader.currentDisplays()
         let candidates = CaptureBuilder.candidates(
             from: await WindowCatalog.snapshot(),
             displays: displays,
-            excludedBundleIDs: store.loadPreferences().value.excludedBundleIDs
+            excludedBundleIDs: preferences.value.excludedBundleIDs
         )
         guard !candidates.isEmpty else {
             fail("保存できるウィンドウがありません。")
             return 1
         }
-        let workspace = CaptureBuilder.workspace(
-            name: name,
-            color: CaptureBuilder.suggestedColor(existing: workspaces.map(\.color)),
-            icon: CaptureBuilder.suggestedIcon(for: displays),
-            candidates: candidates,
-            displays: displays,
-            launchIfClosed: launch,
-            autoRestoreOnConnect: autoRestore
-        )
-        workspaces.append(workspace)
+
+        let saved: Workspace
+        if let existing, let position = workspaces.firstIndex(where: { $0.id == existing.id }) {
+            // Like "今の配置で上書き" in the app: the workspace keeps its name, color, shortcut and
+            // the title markers of its windows.
+            var workspace = existing
+            workspace.windows = CaptureBuilder.rules(from: candidates, replacing: existing.windows, launchIfClosedForNewWindows: launch)
+            workspace.setDisplays(DisplayRoles.ordered(displays).map(DisplayInfo.init))
+            if !autoRestore {
+                workspace.autoRestoreOnConnect = false
+            }
+            workspace.lastUsedAt = Date()
+            workspaces[position] = workspace
+            saved = workspace
+        } else {
+            let workspace = CaptureBuilder.workspace(
+                name: name,
+                color: CaptureBuilder.suggestedColor(existing: workspaces.map(\.color)),
+                icon: CaptureBuilder.suggestedIcon(for: displays),
+                candidates: candidates,
+                displays: displays,
+                launchIfClosed: launch,
+                autoRestoreOnConnect: autoRestore
+            )
+            workspaces.append(workspace)
+            saved = workspace
+        }
         do {
             try store.saveWorkspaces(workspaces)
         } catch {
             fail("保存できませんでした: \(error.localizedDescription)")
             return 1
         }
-        print("「\(workspace.name)」に\(workspace.windows.count)件のウィンドウを保存しました。")
+        print("「\(saved.name)」に\(saved.windows.count)件のウィンドウを\(existing == nil ? "保存" : "上書き")しました。")
         return 0
     }
 
-    static func restore(_ arguments: inout Arguments) async -> Int32 {
-        guard requirePermission() else { return 2 }
+    static func restore(_ arguments: inout CommandLineArguments) async throws -> Int32 {
         guard let query = arguments.next() else {
-            fail("復元するワークスペースの名前か番号を指定してください。")
-            return 64
+            throw UsageError("復元するワークスペースの名前か番号を指定してください。")
         }
+        try finishParsing(arguments)
+        guard requirePermission() else { return 2 }
+
         let store = LaneKeepStore()
-        let workspaces = store.loadWorkspaces().value
-        let match = Int(query).flatMap { workspaces.indices.contains($0 - 1) ? workspaces[$0 - 1] : nil }
-            ?? workspaces.first { $0.name == query }
-        guard let workspace = match else {
+        let load = store.loadWorkspaces(unreadableFile: .leave)
+        warnAbout(load, file: "workspaces.json")
+        guard let workspace = WorkspaceLookup.find(query, in: load.value) else {
             fail("ワークスペース「\(query)」が見つかりません。lanekeep workspaces で確認してください。")
             return 1
         }
+        if WorkspaceLookup.named(query, in: load.value).count > 1 {
+            fail("「\(query)」という名前が複数あるので、最後に使ったものを復元します。")
+        }
+        let preferences = store.loadPreferences(unreadableFile: .leave)
+        warnAbout(preferences, file: "preferences.json")
         let request = RestoreRequest(
             workspace: workspace,
             displays: ScreenReader.currentDisplays(),
-            fallback: store.loadPreferences().value.missingDisplayFallback
+            fallback: preferences.value.missingDisplayFallback
         )
         let report = await LiveRestore.run(request) { progress in
             print("配置中… \(progress.completed) / \(progress.total)")
         }
         print(report.summary)
+        if report.placedCount > 0 {
+            recordUse(of: workspace.id, at: report.finishedAt, in: store)
+        }
         return report.results.allSatisfy(\.outcome.isPlaced) ? 0 : 1
+    }
+
+    /// Records when the workspace was used, which decides between workspaces for automatic
+    /// restores, as the app does. Skipped when the file cannot be read completely.
+    static func recordUse(of id: UUID, at date: Date, in store: LaneKeepStore) {
+        let load = store.loadWorkspaces(unreadableFile: .leave)
+        guard load.problem == nil, let position = load.value.firstIndex(where: { $0.id == id }) else { return }
+        var workspaces = load.value
+        workspaces[position].lastUsedAt = date
+        try? store.saveWorkspaces(workspaces)
     }
 
     static func permission(prompt: Bool) -> Int32 {
@@ -297,6 +421,18 @@ enum CLI {
         return true
     }
 
+    /// Tells about a data file that could not be read completely. The file itself is left alone.
+    static func warnAbout<Value>(_ load: StoreLoad<Value>, file: String) {
+        switch load.problem {
+        case .unreadable:
+            fail("\(file) を読み込めませんでした（ファイルはそのままです）。")
+        case .partlyUnreadable(let entries):
+            fail("\(file) のうち\(entries)件を読み込めませんでした（ファイルはそのままです）。")
+        case nil:
+            break
+        }
+    }
+
     static func findApp(_ query: String) -> RunningAppInfo? {
         let apps = RunningApps.regularApps()
         return apps.first { $0.bundleID == query }
@@ -308,24 +444,10 @@ enum CLI {
         guard let value else {
             return displays.first(where: \.isMain) ?? displays.first
         }
-        if let number = Int(value), displays.indices.contains(number - 1) {
-            return displays[number - 1]
+        if let number = Int(value) {
+            return displays.indices.contains(number - 1) ? displays[number - 1] : nil
         }
         return displays.first { $0.uuid.caseInsensitiveCompare(value) == .orderedSame }
-    }
-
-    /// "0,0,0.5,1" or "0,0,50%,100%".
-    static func parseFrame(_ text: String) -> CGRect? {
-        let parts = text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard parts.count == 4 else { return nil }
-        let values: [CGFloat] = parts.compactMap { part in
-            if part.hasSuffix("%") {
-                return Double(part.dropLast()).map { CGFloat($0) / 100 }
-            }
-            return Double(part).map { CGFloat($0) }
-        }
-        guard values.count == 4, values[2] > 0, values[3] > 0 else { return nil }
-        return CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
     }
 
     static func describe(_ rect: CGRect) -> String {
@@ -349,33 +471,15 @@ enum CLI {
     }
 }
 
-/// Minimal argument handling: positional values in order, flags and `--name value` options
-/// anywhere.
-struct Arguments {
-    private var items: [String]
+/// A usage mistake that is not about a single option.
+struct UsageError: Error, LocalizedError {
+    let message: String
 
-    init(_ items: [String]) {
-        self.items = items
+    init(_ message: String) {
+        self.message = message
     }
 
-    /// The next positional argument.
-    mutating func next() -> String? {
-        guard let index = items.firstIndex(where: { !$0.hasPrefix("--") }) else { return nil }
-        return items.remove(at: index)
-    }
-
-    mutating func flag(_ name: String) -> Bool {
-        guard let index = items.firstIndex(of: name) else { return false }
-        items.remove(at: index)
-        return true
-    }
-
-    mutating func value(for name: String) -> String? {
-        guard let index = items.firstIndex(of: name), items.indices.contains(index + 1) else { return nil }
-        let value = items[index + 1]
-        items.removeSubrange(index...(index + 1))
-        return value
-    }
+    var errorDescription: String? { message }
 }
 
 struct DisplaysOutput: Encodable {

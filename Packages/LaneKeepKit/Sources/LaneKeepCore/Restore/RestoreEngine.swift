@@ -19,8 +19,9 @@ public struct RestoreEngine<System: WindowSystem> {
     /// 1. Rules whose display is gone (and should not be redirected) are skipped.
     /// 2. Apps that are not running are launched when a rule allows it; hidden apps are shown.
     /// 3. Windows of running apps are matched (spec §6.3) and placed right away.
-    /// 4. For launched apps, the engine checks every `pollInterval` and places windows as they
-    ///    appear, for at most `windowWaitTimeout` per app.
+    /// 4. For launched apps, apps that were asked to open a window and apps that did not answer,
+    ///    the engine checks every `pollInterval` and places windows as they appear, for at most
+    ///    `windowWaitTimeout` per app, counted from when the waiting starts.
     ///
     /// - Parameter progress: Called after every rule that has been dealt with.
     public func run(
@@ -34,17 +35,40 @@ public struct RestoreEngine<System: WindowSystem> {
 
 /// The state of one restore.
 private final class RestoreRun<System: WindowSystem> {
+    /// How LaneKeep came to wait for an app's windows.
+    enum Origin {
+        /// The app was running with windows.
+        case running
+        /// LaneKeep launched it.
+        case launched
+        /// It was running without a window and was asked to open one.
+        case reopened
+    }
+
     /// The rules of one app that still need a window.
     struct AppWork {
         var bundleID: String
         var remaining: [Int]
+        var origin: Origin
         var deadline: ContinuousClock.Instant?
         var placedHandles: Set<System.Handle> = []
         var lastWindowCount = 0
+        /// The app did not answer the last time its windows were asked for.
+        var isBusy = false
+        /// The titles of the app's windows at the last check, and how many checks in a row they
+        /// stayed the same: windows of a launching app come one by one and get their titles late.
+        var lastTitles: [String]?
+        var unchangedChecks = 0
     }
 
     /// Windows within this many points of the requested frame count as placed exactly.
     private let tolerance: CGFloat = 2
+    /// While waiting for an app, rules without a title marker are only matched once the windows
+    /// have stopped changing for this many checks…
+    private let settledChecks = 1
+    /// …and all marker rules found their window and there are enough windows; or, failing that,
+    /// once the windows have not changed for this many checks, or in the last tenth of the wait.
+    private let patientChecks = 3
 
     private let system: System
     private let request: RestoreRequest
@@ -77,7 +101,7 @@ private final class RestoreRun<System: WindowSystem> {
         }
 
         var running: [AppWork] = []
-        var launching: [AppWork] = []
+        var waiting: [AppWork] = []
         for (bundleID, indices) in pendingRulesByApp() {
             guard !Task.isCancelled else { break }
             switch await system.runningState(of: bundleID) {
@@ -85,18 +109,21 @@ private final class RestoreRun<System: WindowSystem> {
                 if isHidden {
                     await system.unhide(bundleID)
                 }
-                running.append(AppWork(bundleID: bundleID, remaining: indices))
+                running.append(AppWork(bundleID: bundleID, remaining: indices, origin: .running))
             case .notRunning:
-                let launchable = indices.filter { rules[$0].launchIfClosed }
-                for index in indices where !rules[index].launchIfClosed {
-                    await finish(index, .appNotRunning)
+                // Launch the app if any of its rules allows it. Once it runs, all of its rules
+                // can use its windows.
+                guard indices.contains(where: { rules[$0].launchIfClosed }) else {
+                    for index in indices {
+                        await finish(index, .appNotRunning)
+                    }
+                    continue
                 }
-                guard !launchable.isEmpty else { continue }
                 switch await system.requestLaunch(of: bundleID) {
                 case .requested:
-                    launching.append(AppWork(bundleID: bundleID, remaining: launchable, deadline: newDeadline()))
+                    waiting.append(AppWork(bundleID: bundleID, remaining: indices, origin: .launched))
                 case .notInstalled:
-                    for index in launchable {
+                    for index in indices {
                         await finish(index, .appNotInstalled)
                     }
                 }
@@ -105,19 +132,21 @@ private final class RestoreRun<System: WindowSystem> {
 
         for var work in running {
             guard !Task.isCancelled else { break }
-            await placeAvailableWindows(&work)
+            await placeAvailableWindows(&work, waiting: false)
+            guard !Task.isCancelled else { break }
             guard !work.remaining.isEmpty else { continue }
 
-            // The app runs but has no window at all, e.g. its window was closed: ask it to open one,
-            // like clicking its Dock icon, and wait for it like for a launched app.
-            let reopenable = work.remaining.filter { rules[$0].launchIfClosed }
-            if work.lastWindowCount == 0, !reopenable.isEmpty, await system.requestReopenIfWindowless(work.bundleID) {
-                for index in work.remaining where !rules[index].launchIfClosed {
-                    await finish(index, .windowNotFound)
-                }
-                work.remaining = reopenable
-                work.deadline = newDeadline()
-                launching.append(work)
+            if work.isBusy {
+                // The app did not answer, which happens while apps rearrange themselves after a
+                // display change: keep asking for a while.
+                waiting.append(work)
+            } else if work.lastWindowCount == 0,
+                      work.remaining.contains(where: { rules[$0].launchIfClosed }),
+                      await system.requestReopenIfWindowless(work.bundleID) {
+                // The app runs but has no window at all, e.g. its window was closed: it was asked to
+                // open one, like clicking its Dock icon. Wait for it like for a launched app.
+                work.origin = .reopened
+                waiting.append(work)
             } else {
                 for index in work.remaining {
                     await finish(index, .windowNotFound)
@@ -125,22 +154,30 @@ private final class RestoreRun<System: WindowSystem> {
             }
         }
 
-        while !launching.isEmpty, !Task.isCancelled {
-            for position in launching.indices {
-                await placeAvailableWindows(&launching[position])
+        // The wait starts now, after the running apps have been arranged, so that launching apps
+        // get the full time however long that took.
+        let waitDeadline = clock.now.advanced(by: request.timing.windowWaitTimeout)
+        for position in waiting.indices {
+            waiting[position].deadline = waitDeadline
+        }
+        while !waiting.isEmpty, !Task.isCancelled {
+            for position in waiting.indices {
+                guard !Task.isCancelled else { break }
+                await placeAvailableWindows(&waiting[position], waiting: true)
             }
+            guard !Task.isCancelled else { break }
             var stillWaiting: [AppWork] = []
-            for work in launching where !work.remaining.isEmpty {
+            for work in waiting where !work.remaining.isEmpty {
                 if let deadline = work.deadline, clock.now >= deadline {
                     for index in work.remaining {
-                        await finish(index, .stillLaunching)
+                        await finish(index, timeoutOutcome(for: work))
                     }
                 } else {
                     stillWaiting.append(work)
                 }
             }
-            launching = stillWaiting
-            if !launching.isEmpty {
+            waiting = stillWaiting
+            if !waiting.isEmpty {
                 try? await Task.sleep(for: request.timing.pollInterval)
             }
         }
@@ -171,8 +208,15 @@ private final class RestoreRun<System: WindowSystem> {
         return order.map { ($0, groups[$0] ?? []) }
     }
 
-    private func newDeadline() -> ContinuousClock.Instant {
-        clock.now.advanced(by: request.timing.windowWaitTimeout)
+    /// Why a rule of an app that was waited for in vain has no window.
+    private func timeoutOutcome(for work: AppWork) -> RuleOutcome {
+        if work.isBusy {
+            return .appNotResponding
+        }
+        if work.origin == .launched, work.lastWindowCount == 0 {
+            return .stillLaunching
+        }
+        return .windowNotFound
     }
 
     private func finish(_ index: Int, _ outcome: RuleOutcome) async {
@@ -183,20 +227,71 @@ private final class RestoreRun<System: WindowSystem> {
     }
 
     /// Matches the app's current windows against its remaining rules and places the matches.
-    private func placeAvailableWindows(_ work: inout AppWork) async {
+    ///
+    /// - Parameter waiting: The app is launching or opening a window. Its windows may still be
+    ///   coming in, so rules without a title marker hold back until the windows have settled.
+    private func placeAvailableWindows(_ work: inout AppWork, waiting: Bool) async {
         guard !work.remaining.isEmpty else { return }
-        let windows = await system.windows(of: work.bundleID)
+        guard let windows = await system.windows(of: work.bundleID) else {
+            work.isBusy = true
+            return
+        }
+        work.isBusy = false
         work.lastWindowCount = windows.count
+        let titles = windows.map(\.title).sorted()
+        if titles == work.lastTitles {
+            work.unchangedChecks += 1
+        } else {
+            work.lastTitles = titles
+            work.unchangedChecks = 0
+        }
         guard !windows.isEmpty else { return }
 
-        let taken = Set(windows.indices.filter { work.placedHandles.contains(windows[$0].handle) })
-        let assignment = WindowMatcher.assign(
-            rules: work.remaining.map { rules[$0] },
-            titles: windows.map(\.title),
+        let matchable = windows.enumerated().map { position, window in
+            MatchableWindow(title: window.title, position: position, location: location(of: window))
+        }
+        let placed = work.placedHandles
+        var taken = Set(windows.indices.filter { placed.contains(windows[$0].handle) })
+        let markerRules = work.remaining.filter { rules[$0].titleMarker != nil }
+        let otherRules = work.remaining.filter { rules[$0].titleMarker == nil }
+
+        var matches: [(rule: Int, window: SystemWindow<System.Handle>)] = []
+        let markerAssignment = WindowMatcher.assign(
+            rules: markerRules.map { rules[$0] },
+            windows: matchable,
             excluding: taken
         )
-        let matches: [(rule: Int, window: SystemWindow<System.Handle>)] = zip(work.remaining, assignment).compactMap { rule, window in
-            window.map { (rule, windows[$0]) }
+        for (rule, window) in zip(markerRules, markerAssignment) {
+            if let window {
+                matches.append((rule, windows[window]))
+                taken.insert(window)
+            }
+        }
+
+        if !otherRules.isEmpty {
+            var release = true
+            if waiting {
+                let allMarkersFound = matches.count == markerRules.count
+                let enoughWindows = windows.count - taken.count >= otherRules.count
+                let lastChance = request.timing.windowWaitTimeout / 10
+                let nearlyOver = work.deadline.map { clock.now >= $0.advanced(by: .zero - lastChance) } ?? true
+                release = (work.unchangedChecks >= settledChecks && allMarkersFound && enoughWindows)
+                    || work.unchangedChecks >= patientChecks
+                    || nearlyOver
+            }
+            if release {
+                let assignment = WindowMatcher.assign(
+                    rules: otherRules.map { rules[$0] },
+                    windows: matchable,
+                    excluding: taken,
+                    strategy: request.matching
+                )
+                for (rule, window) in zip(otherRules, assignment) {
+                    if let window {
+                        matches.append((rule, windows[window]))
+                    }
+                }
+            }
         }
         guard !matches.isEmpty else { return }
 
@@ -211,6 +306,17 @@ private final class RestoreRun<System: WindowSystem> {
         await system.endArranging(work.bundleID)
     }
 
+    /// The display a window is on and its frame relative to that display's visible area.
+    private func location(of window: SystemWindow<System.Handle>) -> WindowLocation? {
+        guard let frame = window.frame,
+              let display = DisplayGeometry.display(forAccessibilityRect: frame, among: request.displays, primaryHeight: primaryHeight)
+        else {
+            return nil
+        }
+        let bounds = CoordinateConverter.accessibilityRect(fromAppKit: display.visibleFrame, primaryHeight: primaryHeight)
+        return WindowLocation(displayUUID: display.uuid, relativeFrame: RelativeGeometry.relativeFrame(of: frame, in: bounds))
+    }
+
     private func place(rule index: Int, window: SystemWindow<System.Handle>) async -> RuleOutcome {
         guard let target = targets[index] else {
             return .skippedMissingDisplay
@@ -221,10 +327,20 @@ private final class RestoreRun<System: WindowSystem> {
         if window.isMinimized {
             await unminimize(window.handle)
         }
-        guard await system.setFrame(desired, of: window.handle) == .applied else {
+        var applied = await system.setFrame(desired, of: window.handle) == .applied
+        var current = await system.frame(of: window.handle)
+        if !applied || current == nil {
+            // A busy app may answer late and move the window anyway: look again before trying once more.
+            try? await Task.sleep(for: request.timing.retryDelay)
+            current = await system.frame(of: window.handle)
+            if current.map({ !$0.isWithin(tolerance, of: desired) }) ?? true {
+                applied = await system.setFrame(desired, of: window.handle) == .applied
+                current = await system.frame(of: window.handle)
+            }
+        }
+        guard var actual = current ?? (applied ? desired : nil) else {
             return .moveFailed
         }
-        var actual = await system.frame(of: window.handle) ?? desired
 
         // An app may refuse the requested size (minimum size, fixed-size window). Then keep the
         // window inside the visible area instead of letting it hang off the edge (spec §6.6).
@@ -241,8 +357,11 @@ private final class RestoreRun<System: WindowSystem> {
             actual = await system.frame(of: window.handle) ?? actual
         }
 
+        // Placed if the window is where it was asked to go, or if it moved and the app put it
+        // somewhere else on the target display.
         let displayBounds = CoordinateConverter.accessibilityRect(fromAppKit: target.display.frame, primaryHeight: primaryHeight)
-        guard displayBounds.contains(CGPoint(x: actual.midX, y: actual.midY)) else {
+        let isWhereExpected = actual.origin.maxAxisDistance(to: expectedOrigin) <= tolerance
+        guard isWhereExpected || (applied && displayBounds.contains(CGPoint(x: actual.midX, y: actual.midY))) else {
             return .moveFailed
         }
         return .placed(frame: actual, redirected: target.redirected)
@@ -256,5 +375,11 @@ private final class RestoreRun<System: WindowSystem> {
         }
         // Let the un-minimize animation finish, otherwise it can put the window back.
         try? await Task.sleep(for: request.timing.unminimizeSettleDelay)
+    }
+}
+
+private extension CGRect {
+    func isWithin(_ tolerance: CGFloat, of other: CGRect) -> Bool {
+        origin.maxAxisDistance(to: other.origin) <= tolerance && size.maxAxisDistance(to: other.size) <= tolerance
     }
 }

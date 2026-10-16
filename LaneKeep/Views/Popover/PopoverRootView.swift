@@ -13,8 +13,8 @@ struct PopoverRootView: View {
             .background(Theme.window)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: screen)
             .background(
-                WindowVisibilityReader { isVisible, window in
-                    model.popoverVisibilityChanged(isVisible, window: window)
+                WindowVisibilityReader { visibility, window in
+                    model.popoverVisibilityChanged(visibility, window: window)
                 }
             )
     }

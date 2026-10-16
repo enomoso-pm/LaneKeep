@@ -39,6 +39,20 @@ public enum RelativeGeometry {
         return CGRect(x: minX, y: minY, width: max(1, maxX - minX), height: max(1, maxY - minY))
     }
 
+    /// Moves (and if need be shrinks) a relative frame so that it lies within 0…1: windows are
+    /// saved fully inside their display, as the spec's 0–1 range says, even if one hung off an
+    /// edge when it was saved.
+    public static func fittedToUnit(_ relative: CGRect) -> CGRect {
+        let width = min(max(relative.width, 0), 1)
+        let height = min(max(relative.height, 0), 1)
+        return CGRect(
+            x: quantize(min(max(relative.minX, 0), 1 - width)),
+            y: quantize(min(max(relative.minY, 0), 1 - height)),
+            width: quantize(width),
+            height: quantize(height)
+        )
+    }
+
     private static func quantize(_ value: CGFloat) -> CGFloat {
         (value * precision).rounded() / precision
     }

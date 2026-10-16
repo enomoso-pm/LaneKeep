@@ -14,6 +14,9 @@ final class FakeWindow: Hashable, CustomStringConvertible {
     var minimumSize = CGSize.zero
     /// The next this many `setOrigin` calls are acknowledged but have no effect.
     var ignoredMoves = 0
+    /// The next this many `setFrame` calls report a failure although the window does move (an app
+    /// that answers too late).
+    var lateFrameChanges = 0
 
     init(title: String, frame: CGRect = CGRect(x: 0, y: 0, width: 400, height: 300), isMinimized: Bool = false) {
         self.title = title
@@ -44,6 +47,11 @@ final class FakeApp {
     var lookupsBeforeWindowsAppear = 0
     /// Simulates an app whose only windows are on another desktop.
     var hasWindowsOnOtherDesktops = false
+    /// The next this many window lookups get no answer (a busy app).
+    var unansweredLookups = 0
+    /// Called on every window lookup with the number of lookups so far, to change windows over time.
+    var onLookup: ((FakeApp, Int) -> Void)?
+    private(set) var lookups = 0
     private(set) var wasLaunchedOrReopened = false
 
     init(bundleID: String, isRunning: Bool, windows: [FakeWindow]) {
@@ -54,6 +62,11 @@ final class FakeApp {
 
     func markLaunched() {
         wasLaunchedOrReopened = true
+    }
+
+    func noteLookup() {
+        lookups += 1
+        onLookup?(self, lookups)
     }
 }
 
@@ -104,8 +117,17 @@ final class FakeWindowSystem: WindowSystem {
         apps[bundleID]?.isHidden = false
     }
 
-    func windows(of bundleID: String) async -> [SystemWindow<FakeWindow>] {
+    /// Time each `setFrame` takes, to simulate slow apps.
+    var setFrameDelay: Duration = .zero
+
+    func windows(of bundleID: String) async -> [SystemWindow<FakeWindow>]? {
         guard let app = apps[bundleID], app.isRunning else { return [] }
+        app.noteLookup()
+        if app.unansweredLookups > 0 {
+            app.unansweredLookups -= 1
+            events.append("busy \(bundleID)")
+            return nil
+        }
         if app.wasLaunchedOrReopened, !app.windowsAfterLaunch.isEmpty {
             if app.lookupsBeforeWindowsAppear > 0 {
                 app.lookupsBeforeWindowsAppear -= 1
@@ -114,7 +136,7 @@ final class FakeWindowSystem: WindowSystem {
                 app.windowsAfterLaunch = []
             }
         }
-        return app.windows.map { SystemWindow(handle: $0, title: $0.title, isMinimized: $0.isMinimized) }
+        return app.windows.map { SystemWindow(handle: $0, title: $0.title, isMinimized: $0.isMinimized, frame: $0.frame) }
     }
 
     func beginArranging(_ bundleID: String) async {
@@ -136,12 +158,19 @@ final class FakeWindowSystem: WindowSystem {
     }
 
     func setFrame(_ frame: CGRect, of window: FakeWindow) async -> FrameChangeResult {
+        if setFrameDelay > .zero {
+            try? await Task.sleep(for: setFrameDelay)
+        }
         guard window.isMovable else { return .failed }
         var size = window.isResizable ? frame.size : window.frame.size
         size.width = max(size.width, window.minimumSize.width)
         size.height = max(size.height, window.minimumSize.height)
         window.frame = CGRect(origin: frame.origin, size: size)
         events.append("setFrame \(window.title)")
+        if window.lateFrameChanges > 0 {
+            window.lateFrameChanges -= 1
+            return .failed
+        }
         return .applied
     }
 

@@ -380,6 +380,172 @@ struct RestoreEngineTests {
     }
 }
 
+extension RestoreEngineTests {
+    @Test("Windows of one app stay with the place they are closest to, whatever the window order")
+    func zOrderDoesNotSwapWindows() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [
+            Fixtures.rule("Terminal", index: 0, display: "BUILTIN", 0, 0, 50, 100),
+            Fixtures.rule("Terminal", index: 1, display: "BUILTIN", 50, 0, 50, 100)
+        ]
+        let system = FakeWindowSystem()
+        // Saved with the left window in front; the right one has been clicked since, so the
+        // Accessibility order is reversed. Both were nudged a little.
+        let left = FakeWindow(title: "zsh", frame: CGRect(x: 20, y: 60, width: 700, height: 880))
+        let right = FakeWindow(title: "zsh", frame: CGRect(x: 780, y: 50, width: 700, height: 900))
+        system.addApp(workspace.windows[0].bundleID, windows: [right, left])
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.summary == "2件すべて配置しました")
+        #expect(left.frame.minX == 0)
+        #expect(right.frame.minX == 756)
+    }
+
+    @Test("An app that does not answer at first is asked again")
+    func busyAppIsRetried() async {
+        let workspace = Fixtures.laptopWorkspace
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        system.apps[workspace.windows[0].bundleID]!.unansweredLookups = 3
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.results[0].outcome.isPlaced)
+        #expect(report.summary == "4件すべて配置しました")
+        #expect(!system.events.contains { $0.hasPrefix("reopen") })
+    }
+
+    @Test("An app that never answers is reported as not responding")
+    func appNotResponding() async {
+        let workspace = Fixtures.laptopWorkspace
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        system.apps[workspace.windows[0].bundleID]!.unansweredLookups = .max
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.results[0].outcome == .appNotResponding)
+        #expect(report.summary == "3件を配置しました。Safariが応答しませんでした")
+    }
+
+    @Test("While an app launches, a marker rule gets its window even if the title comes late")
+    func launchWithLateTitle() async {
+        var workspace = Fixtures.homeWorkspace
+        let marked = Fixtures.rule("VS Code", index: 0, title: "lanekeep", display: "EXT-27", 51, 3, 47, 62)
+        let plain = Fixtures.rule("VS Code", index: 1, display: "EXT-27", 2, 3, 48, 94)
+        workspace.windows = [marked, plain]
+        let system = FakeWindowSystem()
+        let app = system.addApp(marked.bundleID, running: false)
+        let project = FakeWindow(title: "Loading…")
+        let other = FakeWindow(title: "notes.txt")
+        app.onLookup = { app, lookup in
+            // The project window appears first, with its real title only a little later; the
+            // other window comes after that.
+            switch lookup {
+            case 2: app.windows = [project]
+            case 4: project.title = "README.md — lanekeep"
+            case 6: app.windows = [other, project]
+            default: break
+            }
+        }
+
+        let report = await restore(workspace, on: Fixtures.homeDisplays, system: system)
+
+        #expect(report.summary == "2件すべて配置しました")
+        let projectTarget = expectedFrame(marked, on: Fixtures.external27, primaryHeight: 1440)
+        let otherTarget = expectedFrame(plain, on: Fixtures.external27, primaryHeight: 1440)
+        #expect(project.frame == projectTarget)
+        #expect(other.frame == otherTarget)
+    }
+
+    @Test("Once an app is launched for one rule, its other rules use its windows too")
+    func launchedAppServesAllRules() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [
+            Fixtures.rule("Terminal", index: 0, display: "BUILTIN", 0, 0, 50, 100),
+            Fixtures.rule("Terminal", index: 1, display: "BUILTIN", 50, 0, 50, 100, launch: false)
+        ]
+        let system = FakeWindowSystem()
+        let app = system.addApp(workspace.windows[0].bundleID, running: false)
+        app.windowsAfterLaunch = [FakeWindow(title: "zsh 1"), FakeWindow(title: "zsh 2")]
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.summary == "2件すべて配置しました")
+    }
+
+    @Test("A window that does not come back after a reopen is reported as not found")
+    func reopenTimeout() async {
+        let workspace = Fixtures.laptopWorkspace
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        system.apps[workspace.windows[2].bundleID]!.windows = []
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(system.events.contains("reopen \(workspace.windows[2].bundleID)"))
+        #expect(report.results[2].outcome == .windowNotFound)
+        #expect(report.summary == "3件を配置しました。メモのウィンドウが見つかりませんでした")
+    }
+
+    @Test("A launched app whose windows do not match is reported as not found, not as launching")
+    func launchedButNotMatching() async {
+        var workspace = Fixtures.homeWorkspace
+        workspace.windows = [workspace.windows[1]] // VS Code, title must contain "lanekeep"
+        let system = FakeWindowSystem()
+        let app = system.addApp(workspace.windows[0].bundleID, running: false)
+        app.windowsAfterLaunch = [FakeWindow(title: "other project")]
+
+        let report = await restore(workspace, on: Fixtures.homeDisplays, system: system)
+
+        #expect(report.results[0].outcome == .windowNotFound)
+    }
+
+    @Test("Launching apps get the full wait even when arranging the running apps took long")
+    func waitStartsAfterRunningApps() async {
+        let workspace = Fixtures.laptopWorkspace
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        // Arranging the three running apps takes longer than the whole wait.
+        system.setFrameDelay = .milliseconds(120)
+        let slack = system.apps[workspace.windows[1].bundleID]!
+        slack.isRunning = false
+        slack.windowsAfterLaunch = slack.windows
+        slack.windows = []
+        slack.lookupsBeforeWindowsAppear = 2
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.results[1].outcome.isPlaced)
+    }
+
+    @Test("A window that moved although the app reported an error counts as placed")
+    func lateMoveCounts() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [workspace.windows[0]]
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+        system.apps[workspace.windows[0].bundleID]!.windows[0].lateFrameChanges = 1
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.results[0].outcome.isPlaced)
+    }
+
+    @Test("A rule that puts a window partly off screen is placed as saved")
+    func partlyOffScreen() async {
+        var workspace = Fixtures.laptopWorkspace
+        workspace.windows = [Fixtures.rule("Safari", display: "BUILTIN", 90, 10, 23, 50)]
+        let system = FakeWindowSystem()
+        system.addApps(for: workspace)
+
+        let report = await restore(workspace, on: [Fixtures.builtinAlone], system: system)
+
+        #expect(report.results[0].outcome.isPlaced)
+    }
+}
+
 /// Collects progress values from the engine's callback.
 final class ProgressRecorder {
     var values: [RestoreProgress] = []

@@ -6,8 +6,8 @@ import LaneKeepSystem
 ///
 /// - `onDisplaysChanged` fires right away so the UI can follow along.
 /// - `onSettled` fires once things have been quiet for two seconds — connecting a display
-///   produces a burst of notifications — and only when the set of displays actually changed or
-///   the Mac woke up.
+///   produces a burst of notifications — and only when the set of displays changed (also when a
+///   display dropped out and came back in the meantime) or the Mac woke up.
 @MainActor
 final class DisplayMonitor {
     var onDisplaysChanged: (() -> Void)?
@@ -57,6 +57,7 @@ final class DisplayMonitor {
     }
 
     private func screenParametersDidChange() {
+        tracker.noteSignature(DisplaySignature.make(ScreenReader.currentDisplays().map(\.uuid)))
         onDisplaysChanged?()
         scheduleEvaluation()
     }

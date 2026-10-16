@@ -50,16 +50,21 @@ public final class AXWindowSystem: WindowSystem {
         }
     }
 
-    public func windows(of bundleID: String) async -> [SystemWindow<AXUIElement>] {
+    public func windows(of bundleID: String) async -> [SystemWindow<AXUIElement>]? {
         guard let pid = await processIdentifier(of: bundleID) else {
             return []
         }
         let application = AXUIElementCreateApplication(pid)
-        return AXReader.standardWindows(of: application).map { window in
+        guard let windows = AXReader.standardWindows(of: application) else {
+            Log.restore.info("\(bundleID, privacy: .public) did not answer")
+            return nil
+        }
+        return windows.map { window in
             SystemWindow(
                 handle: window,
                 title: window.string(AXAttribute.title) ?? "",
-                isMinimized: window.bool(AXAttribute.minimized) ?? false
+                isMinimized: window.bool(AXAttribute.minimized) ?? false,
+                frame: window.frame
             )
         }
     }

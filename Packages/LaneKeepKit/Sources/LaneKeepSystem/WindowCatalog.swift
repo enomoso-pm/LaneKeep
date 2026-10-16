@@ -2,6 +2,7 @@
 import ApplicationServices
 import Foundation
 import LaneKeepCore
+import os
 
 /// Reads the windows that are on screen (spec §6.1).
 public enum WindowCatalog {
@@ -14,15 +15,32 @@ public enum WindowCatalog {
     public static func snapshot() async -> [WindowSnapshot] {
         let apps = await MainActor.run { RunningApps.regularApps() }
         return await Task.detached(priority: .userInitiated) {
-            apps.flatMap { windows(of: $0) }
+            var snapshots: [WindowSnapshot] = []
+            for app in apps {
+                // An app that is busy for a moment gets a second chance.
+                if let windows = windows(of: app) ?? retryAfterPause(app) {
+                    snapshots += windows
+                } else {
+                    Log.restore.info("\(app.bundleID, privacy: .public) did not answer; its windows are not listed")
+                }
+            }
+            return snapshots
         }.value
     }
 
-    /// The windows of one app.
-    public static func windows(of app: RunningAppInfo) -> [WindowSnapshot] {
+    private static func retryAfterPause(_ app: RunningAppInfo) -> [WindowSnapshot]? {
+        Thread.sleep(forTimeInterval: 0.3)
+        return windows(of: app)
+    }
+
+    /// The windows of one app, or `nil` when it did not answer.
+    public static func windows(of app: RunningAppInfo) -> [WindowSnapshot]? {
         let element = AXUIElementCreateApplication(app.pid)
+        guard let standardWindows = AXReader.standardWindows(of: element) else {
+            return nil
+        }
         var snapshots: [WindowSnapshot] = []
-        for (index, window) in AXReader.standardWindows(of: element).enumerated() {
+        for (index, window) in standardWindows.enumerated() {
             guard let frame = window.frame else { continue }
             snapshots.append(
                 WindowSnapshot(

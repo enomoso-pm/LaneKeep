@@ -65,7 +65,7 @@ public enum CaptureBuilder {
     ///
     /// Leaves out minimized and full-screen windows, windows of excluded apps, tiny windows and
     /// windows that are not on any display. Each window belongs to the display that contains its
-    /// center (spec §6.1).
+    /// center (spec §6.1); a window that hangs off its display is recorded as if moved inside it.
     public static func candidates(
         from windows: [WindowSnapshot],
         displays: [DisplaySnapshot],
@@ -76,7 +76,8 @@ public enum CaptureBuilder {
         }
         let roles = DisplayRoles.assign(displays)
         let displayOrder = Dictionary(
-            uniqueKeysWithValues: DisplayRoles.ordered(displays).enumerated().map { ($0.element.uuid, $0.offset) }
+            DisplayRoles.ordered(displays).enumerated().map { ($0.element.uuid, $0.offset) },
+            uniquingKeysWith: { first, _ in first }
         )
 
         let candidates: [CaptureCandidate] = windows.compactMap { window in
@@ -98,7 +99,7 @@ public enum CaptureBuilder {
             return CaptureCandidate(
                 window: window,
                 displayUUID: display.uuid,
-                relativeFrame: RelativeGeometry.relativeFrame(of: window.frame, in: visibleFrame)
+                relativeFrame: RelativeGeometry.fittedToUnit(RelativeGeometry.relativeFrame(of: window.frame, in: visibleFrame))
             )
         }
 

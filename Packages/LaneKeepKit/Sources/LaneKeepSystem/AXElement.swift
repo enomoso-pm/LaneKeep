@@ -25,13 +25,33 @@ enum AXRoleValue {
     static let standardWindow = "AXStandardWindow"
 }
 
+/// The answer to reading an attribute.
+enum AXRead {
+    case value(CFTypeRef)
+    /// The element has no such attribute, or no value for it.
+    case missing
+    /// The app did not answer in time (`kAXErrorCannotComplete`): it is busy or hangs.
+    case noAnswer
+}
+
 extension AXUIElement {
-    func copyValue(_ attribute: String) -> CFTypeRef? {
+    func read(_ attribute: String) -> AXRead {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(self, attribute as CFString, &value) == .success else {
-            return nil
+        switch AXUIElementCopyAttributeValue(self, attribute as CFString, &value) {
+        case .success:
+            return value.map(AXRead.value) ?? .missing
+        case .cannotComplete:
+            return .noAnswer
+        default:
+            return .missing
         }
-        return value
+    }
+
+    func copyValue(_ attribute: String) -> CFTypeRef? {
+        if case .value(let value) = read(attribute) {
+            return value
+        }
+        return nil
     }
 
     func string(_ attribute: String) -> String? {
@@ -98,23 +118,66 @@ extension AXUIElement {
         return CGRect(origin: position, size: size)
     }
 
-    /// A regular document/app window: not a sheet, a panel, a tooltip or a full-screen window.
-    var isStandardNonFullScreenWindow: Bool {
-        if let role = string(AXAttribute.role), role != AXRoleValue.window {
+    /// Whether this is a regular document/app window: not a sheet, a panel, a tooltip or a
+    /// full-screen window. `nil` when the app did not answer.
+    var isStandardNonFullScreenWindow: Bool? {
+        switch read(AXAttribute.role) {
+        case .noAnswer:
+            return nil
+        case .value(let role):
+            if (role as? String) != AXRoleValue.window {
+                return false
+            }
+        case .missing:
+            break
+        }
+        switch read(AXAttribute.subrole) {
+        case .noAnswer:
+            return nil
+        case .value(let subrole):
+            guard (subrole as? String) == AXRoleValue.standardWindow else {
+                return false
+            }
+        case .missing:
             return false
         }
-        guard string(AXAttribute.subrole) == AXRoleValue.standardWindow else {
-            return false
+        switch read(AXAttribute.fullScreen) {
+        case .noAnswer:
+            return nil
+        case .value(let value):
+            return (value as? Bool) != true
+        case .missing:
+            return true
         }
-        return bool(AXAttribute.fullScreen) != true
     }
 }
 
 enum AXReader {
     /// The windows LaneKeep works with, in Accessibility order. Saving and restoring both use this
     /// list, so a window's index means the same thing in both.
-    static func standardWindows(of application: AXUIElement) -> [AXUIElement] {
-        application.elements(AXAttribute.windows).filter(\.isStandardNonFullScreenWindow)
+    ///
+    /// `nil` when the app did not answer, so that a busy app is not mistaken for one without
+    /// windows, and no window is silently left out of the list.
+    static func standardWindows(of application: AXUIElement) -> [AXUIElement]? {
+        let windows: [AXUIElement]
+        switch application.read(AXAttribute.windows) {
+        case .noAnswer:
+            return nil
+        case .missing:
+            return []
+        case .value(let value):
+            windows = value as? [AXUIElement] ?? []
+        }
+        var standard: [AXUIElement] = []
+        for window in windows {
+            guard let isStandard = window.isStandardNonFullScreenWindow else {
+                return nil
+            }
+            if isStandard {
+                standard.append(window)
+            }
+        }
+        return standard
     }
 }
 

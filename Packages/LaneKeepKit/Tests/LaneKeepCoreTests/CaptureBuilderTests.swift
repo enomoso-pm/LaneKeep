@@ -47,6 +47,26 @@ struct CaptureBuilderTests {
         #expect(slack.isClose(to: CGRect(x: 45.0 / 1512, y: 38.0 / 949, width: 1421.0 / 1512, height: 531.0 / 949), tolerance: 0.00001))
     }
 
+    @Test("A window hanging off its display is recorded inside it (0…1)")
+    func fitsIntoDisplay() throws {
+        // Safari reaches 340 pt past the right edge of the external display; its center is still on it.
+        let candidates = CaptureBuilder.candidates(
+            from: [window("Safari", CGRect(x: 2300, y: 100, width: 600, height: 800))],
+            displays: displays
+        )
+        let frame = try #require(candidates.first?.relativeFrame)
+        #expect(frame.maxX == 1)
+        #expect(frame.isClose(to: CGRect(x: 1 - 600.0 / 2560, y: 75.0 / 1415, width: 600.0 / 2560, height: 800.0 / 1415), tolerance: 0.00001))
+    }
+
+    @Test("Relative frames are moved and shrunk into 0…1")
+    func fittedToUnit() {
+        #expect(RelativeGeometry.fittedToUnit(CGRect(x: 0.9, y: -0.1, width: 0.25, height: 0.5)) == CGRect(x: 0.75, y: 0, width: 0.25, height: 0.5))
+        #expect(RelativeGeometry.fittedToUnit(CGRect(x: -0.2, y: 0.3, width: 1.4, height: 0.2)) == CGRect(x: 0, y: 0.3, width: 1, height: 0.2))
+        let inside = CGRect(x: 0.02, y: 0.03, width: 0.48, height: 0.94)
+        #expect(RelativeGeometry.fittedToUnit(inside) == inside)
+    }
+
     @Test("Minimized, full-screen, tiny, off-screen and excluded windows are left out")
     func filters() {
         let candidates = CaptureBuilder.candidates(

@@ -35,6 +35,10 @@ public enum RestoreSummary {
         if !notFound.isEmpty {
             sentences.append("\(list(notFound))のウィンドウが見つかりませんでした")
         }
+        let notResponding = appNames { $0 == .appNotResponding }
+        if !notResponding.isEmpty {
+            sentences.append("\(list(notResponding))が応答しませんでした")
+        }
         let notRunning = appNames { $0 == .appNotRunning }
         if !notRunning.isEmpty {
             sentences.append("\(list(notRunning))は起動していないので飛ばしました")

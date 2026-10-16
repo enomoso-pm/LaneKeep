@@ -37,17 +37,20 @@ public struct RestoreRequest: Sendable {
     public var displays: [DisplaySnapshot]
     public var fallback: MissingDisplayFallback
     public var timing: RestoreTiming
+    public var matching: MatchingStrategy
 
     public init(
         workspace: Workspace,
         displays: [DisplaySnapshot],
         fallback: MissingDisplayFallback,
-        timing: RestoreTiming = .standard
+        timing: RestoreTiming = .standard,
+        matching: MatchingStrategy = .closest
     ) {
         self.workspace = workspace
         self.displays = displays
         self.fallback = fallback
         self.timing = timing
+        self.matching = matching
     }
 }
 
@@ -79,6 +82,8 @@ public enum RuleOutcome: Equatable, Sendable {
     case stillLaunching
     /// The app is running, but no matching window was found.
     case windowNotFound
+    /// The app did not answer the Accessibility API until the wait ended.
+    case appNotResponding
     /// The window refused to move.
     case moveFailed
     /// The restore was cancelled before this rule was handled.

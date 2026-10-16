@@ -79,7 +79,11 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         color = try container.decodeIfPresent(WorkspaceColor.self, forKey: .color) ?? .blue
         icon = try container.decodeIfPresent(WorkspaceIcon.self, forKey: .icon) ?? .display
         shortcut = try container.decodeIfPresent(String.self, forKey: .shortcut)
-        displays = try container.decodeIfPresent([DisplayInfo].self, forKey: .displays) ?? []
+        // A display listed twice (only possible in a hand-edited file) would confuse everything that
+        // looks displays up by UUID; the first entry wins.
+        var seenDisplays = Set<String>()
+        displays = (try container.decodeIfPresent([DisplayInfo].self, forKey: .displays) ?? [])
+            .filter { seenDisplays.insert($0.uuid).inserted }
         displaySignature = try container.decodeIfPresent(String.self, forKey: .displaySignature)
             ?? DisplaySignature.make(displays.map(\.uuid))
         windows = try container.decodeIfPresent([WindowRule].self, forKey: .windows) ?? []

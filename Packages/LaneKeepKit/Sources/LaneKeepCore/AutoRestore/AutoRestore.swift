@@ -17,10 +17,13 @@ public struct AutoRestoreTrigger: OptionSet, Equatable, Sendable {
 /// Turns the stream of screen-change and wake notifications into restore triggers.
 ///
 /// `didChangeScreenParametersNotification` also fires for resolution changes or a moving Dock, so
-/// only an actual change of the display signature counts as "displays changed" (spec §6.2).
+/// only an actual change of the display signature counts as "displays changed" (spec §6.2). A
+/// display that drops out and comes back before things settle (a loose cable, a KVM switch) counts
+/// too: macOS moves its windows away at once, so they need to be put back.
 public struct AutoRestoreTracker: Equatable, Sendable {
     public private(set) var lastSignature: String
     private var wakePending = false
+    private var sawOtherConfiguration = false
 
     public init(initialSignature: String) {
         lastSignature = initialSignature
@@ -28,6 +31,13 @@ public struct AutoRestoreTracker: Equatable, Sendable {
 
     public mutating func noteWake() {
         wakePending = true
+    }
+
+    /// Call on every screen-change notification with the displays connected at that moment.
+    public mutating func noteSignature(_ signature: String) {
+        if !signature.isEmpty, signature != lastSignature {
+            sawOtherConfiguration = true
+        }
     }
 
     /// Call once things have settled (after the debounce). Returns the triggers that apply, or
@@ -40,9 +50,10 @@ public struct AutoRestoreTracker: Equatable, Sendable {
             return nil
         }
         var trigger: AutoRestoreTrigger = []
-        if currentSignature != lastSignature {
+        if currentSignature != lastSignature || sawOtherConfiguration {
             trigger.insert(.displaysChanged)
             lastSignature = currentSignature
+            sawOtherConfiguration = false
         }
         if wakePending {
             trigger.insert(.wake)

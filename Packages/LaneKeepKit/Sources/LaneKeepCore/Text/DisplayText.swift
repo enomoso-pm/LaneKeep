@@ -49,6 +49,11 @@ public enum DisplayText {
     }
 
     static func percent(_ value: CGFloat) -> String {
-        "\(Int((value * 100).rounded()))%"
+        let percent = (value * 100).rounded()
+        // Hand-edited files can hold anything; never crash on converting it.
+        guard percent.isFinite, abs(percent) < 1_000_000 else {
+            return "–"
+        }
+        return "\(Int(percent))%"
     }
 }

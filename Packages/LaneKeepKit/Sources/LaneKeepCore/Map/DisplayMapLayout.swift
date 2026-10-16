@@ -111,7 +111,7 @@ public struct DisplayMapLayout: Equatable, Sendable {
             visibleRects[display.id] = visible.isNull ? rect : visible.intersection(rect)
         }
 
-        let roles = Dictionary(uniqueKeysWithValues: displays.map { ($0.id, $0.role) })
+        let roles = Dictionary(displays.map { ($0.id, $0.role) }, uniquingKeysWith: { first, _ in first })
         var placedWindows: [PlacedWindow] = []
         for window in windows {
             guard

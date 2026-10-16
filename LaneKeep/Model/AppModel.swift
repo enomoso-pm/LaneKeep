@@ -27,6 +27,7 @@ enum RestoreTrigger: Equatable {
 
 struct ActiveRestore: Equatable {
     var workspaceID: UUID
+    var trigger: RestoreTrigger
     var progress: RestoreProgress
 }
 
@@ -83,7 +84,19 @@ final class AppModel {
     @ObservationIgnored private var permissionTask: Task<Void, Never>?
     @ObservationIgnored private var shortcutNoticeTask: Task<Void, Never>?
     @ObservationIgnored private var pendingAutoTrigger: AutoRestoreTrigger?
+    @ObservationIgnored private var restoreTask: Task<Void, Never>?
+    /// When the set of connected displays last changed, and the last restore the user started
+    /// (with its displays): a restore the user picked for new displays is not overridden by the
+    /// automatic one that follows once the displays have settled.
+    @ObservationIgnored private var displaysChangedAt: Date?
+    @ObservationIgnored private var lastUserRestore: (signature: String, startedAt: Date)?
+    /// The version of workspaces.json the app last read or wrote, and what the app changed since:
+    /// the `lanekeep` command writes the same file while the app runs.
+    @ObservationIgnored private var workspacesStamp: FileStamp?
+    @ObservationIgnored private var changedWorkspaceIDs: Set<UUID> = []
+    @ObservationIgnored private var deletedWorkspaceIDs: Set<UUID> = []
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var distributedObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var isStarted = false
     /// Set on the sample models of previews and UI snapshots, which are not in the menu bar.
     @ObservationIgnored private var isPreview = false
@@ -176,6 +189,32 @@ final class AppModel {
             NotificationCenter.default.addObserver(forName: ShortcutCenter.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.shortcutRevision += 1
+                }
+            }
+        )
+        // Coming back from System Settings: the login item may have been approved, the
+        // permission granted or taken away.
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.loginItem.refresh()
+                    self?.refreshPermission()
+                }
+            }
+        )
+        // Posted by the system when the list of apps allowed to use accessibility changes.
+        distributedObservers.append(
+            DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("com.apple.accessibility.api"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    Task { [weak self] in
+                        // The new state takes a moment to apply.
+                        try? await Task.sleep(for: .milliseconds(300))
+                        self?.refreshPermission()
+                    }
                 }
             }
         )
@@ -282,6 +321,7 @@ final class AppModel {
         let previousSignature = currentSignature
         refreshDisplays()
         if currentSignature != previousSignature {
+            displaysChangedAt = Date()
             // Results describe the previous arrangement; the cards show the new state instead.
             notes.removeAll()
         }
@@ -289,17 +329,25 @@ final class AppModel {
 
     // MARK: - Menu bar window
 
-    func popoverVisibilityChanged(_ isVisible: Bool, window: NSWindow) {
+    func popoverVisibilityChanged(_ visibility: WindowVisibility, window: NSWindow) {
         guard !isPreview else { return }
         StatusItemBridge.menuWindow = window
-        if isVisible {
+        switch visibility {
+        case .shown:
             refreshDisplays()
             refreshPermission()
+            syncWorkspacesWithFile()
             if let height = window.screen?.visibleFrame.height {
                 availableScreenHeight = height
             }
-        } else if popoverRoute == .capture {
-            cancelCapture()
+        case .hidden:
+            // Closing the menu abandons a save in progress. A menu that is merely covered (the
+            // display went to sleep) keeps it.
+            if popoverRoute == .capture {
+                cancelCapture()
+            }
+        case .covered:
+            break
         }
     }
 
@@ -311,6 +359,7 @@ final class AppModel {
         }
         StatusItemBridge.closeMenu()
         loginItem.refresh()
+        syncWorkspacesWithFile()
         SettingsWindowController.shared.show(model: self)
     }
 
@@ -334,11 +383,18 @@ final class AppModel {
         refreshDisplays()
         let request = RestoreRequest(workspace: workspace, displays: displays, fallback: preferences.missingDisplayFallback)
         notes[id] = nil
-        activeRestore = ActiveRestore(workspaceID: id, progress: RestoreProgress(completed: 0, total: workspace.windows.count))
+        activeRestore = ActiveRestore(
+            workspaceID: id,
+            trigger: trigger,
+            progress: RestoreProgress(completed: 0, total: workspace.windows.count)
+        )
+        if trigger != .automatic {
+            lastUserRestore = (signature: currentSignature, startedAt: Date())
+        }
         log.info("Restoring \(workspace.name, privacy: .public) (\(String(describing: trigger), privacy: .public))")
 
         let started = ContinuousClock.now
-        Task {
+        restoreTask = Task {
             let report = await LiveRestore.run(request) { progress in
                 await MainActor.run {
                     self.updateProgress(progress, for: id)
@@ -375,11 +431,13 @@ final class AppModel {
 
     private func finishRestore(_ report: RestoreReport) {
         activeRestore = nil
+        restoreTask = nil
         log.info("Restore finished: \(report.summary, privacy: .public)")
         if let index = workspaces.firstIndex(where: { $0.id == report.workspaceID }) {
             notes[report.workspaceID] = report.summary
             if report.placedCount > 0 {
                 workspaces[index].lastUsedAt = report.finishedAt
+                changedWorkspaceIDs.insert(report.workspaceID)
                 scheduleWorkspacesSave()
             }
             announce("「\(workspaces[index].name)」：\(report.summary)")
@@ -398,6 +456,17 @@ final class AppModel {
             pendingAutoTrigger = (pendingAutoTrigger ?? []).union(trigger)
             return
         }
+        var trigger = trigger
+        if trigger.contains(.displaysChanged),
+           let userRestore = lastUserRestore,
+           userRestore.signature == currentSignature,
+           let changedAt = displaysChangedAt,
+           userRestore.startedAt >= changedAt {
+            // The user already restored a workspace for these displays.
+            trigger.remove(.displaysChanged)
+        }
+        guard !trigger.isEmpty else { return }
+        syncWorkspacesWithFile()
         guard let workspace = AutoRestorePolicy.workspaceToRestore(
             among: workspaces,
             currentSignature: currentSignature,
@@ -453,6 +522,7 @@ final class AppModel {
         )
         shortcuts.assignDefaultShortcut(to: &workspace, others: workspaces)
         workspaces.append(workspace)
+        changedWorkspaceIDs.insert(workspace.id)
         shortcuts.registerHandlers(for: workspaces)
         scheduleWorkspacesSave()
         notes[workspace.id] = "\(selected.count)件のウィンドウを保存しました"
@@ -502,6 +572,7 @@ final class AppModel {
     func update(_ id: UUID, _ change: (inout Workspace) -> Void) {
         guard let index = workspaces.firstIndex(where: { $0.id == id }) else { return }
         change(&workspaces[index])
+        changedWorkspaceIDs.insert(id)
         scheduleWorkspacesSave()
     }
 
@@ -523,6 +594,8 @@ final class AppModel {
         guard let workspace = workspace(id) else { return }
         shortcuts.removeShortcut(of: workspace)
         workspaces.removeAll { $0.id == id }
+        changedWorkspaceIDs.remove(id)
+        deletedWorkspaceIDs.insert(id)
         notes[id] = nil
         shortcuts.registerHandlers(for: workspaces)
         scheduleWorkspacesSave()
@@ -540,7 +613,11 @@ final class AppModel {
     /// Called by the recorders after the user changed a shortcut.
     func shortcutRecorded(for name: KeyboardShortcuts.Name) {
         shortcutRevision += 1
-        guard let notice = shortcuts.resolveConflicts(after: name, workspaces: workspaces) else { return }
+        let notice = shortcuts.resolveConflicts(after: name, workspaces: workspaces)
+        // Removing a key combination from one action can unregister it for the action that just
+        // got it (KeyboardShortcuts 2.x); registering all handlers again keeps it working.
+        shortcuts.registerHandlers(for: workspaces)
+        guard let notice else { return }
         shortcutNotice = notice
         shortcutNoticeTask?.cancel()
         shortcutNoticeTask = Task { [weak self] in
@@ -562,6 +639,7 @@ final class AppModel {
             var workspace = workspaces[index]
             shortcuts.assignDefaultShortcut(to: &workspace, others: workspaces)
             workspaces[index] = workspace
+            changedWorkspaceIDs.insert(workspace.id)
             changed = true
         }
         if changed {
@@ -578,6 +656,13 @@ final class AppModel {
 
     func setAutoRestoreEnabled(_ enabled: Bool) {
         updatePreferences { $0.autoRestoreEnabled = enabled }
+        if !enabled {
+            pendingAutoTrigger = nil
+            if activeRestore?.trigger == .automatic {
+                log.info("Automatic restore stopped by the master switch")
+                restoreTask?.cancel()
+            }
+        }
     }
 
     func addExcludedApp(bundleID: String, name: String) {
@@ -602,15 +687,60 @@ final class AppModel {
         let workspaceLoad = store.loadWorkspaces()
         let preferencesLoad = store.loadPreferences()
         workspaces = workspaceLoad.value
+        workspacesStamp = workspaceLoad.stamp
         preferences = preferencesLoad.value
-        let backups = [workspaceLoad.backupOfUnreadableFile, preferencesLoad.backupOfUnreadableFile].compactMap { $0 }
-        if !backups.isEmpty {
-            let names = backups.map(\.lastPathComponent).joined(separator: "、")
-            storageProblem = "保存データの一部を読み込めませんでした。元のファイルは \(names) として残してあります。"
-            log.error("Unreadable data files were backed up: \(names, privacy: .public)")
+        var backups: [URL?] = []
+        if workspaceLoad.problem != nil {
+            backups.append(workspaceLoad.backupOfUnreadableFile)
         }
+        if preferencesLoad.problem != nil {
+            backups.append(preferencesLoad.backupOfUnreadableFile)
+        }
+        reportLoadProblems(backups: backups)
         if case .general = settingsPane, let first = workspaces.first {
             settingsPane = .workspace(first.id)
+        }
+    }
+
+    /// Shows a notice about data files that could not be read completely: one entry per file,
+    /// with the copy that was kept (`nil` when none could be made).
+    private func reportLoadProblems(backups files: [URL?]) {
+        guard !files.isEmpty else { return }
+        let backups = files.compactMap { $0?.lastPathComponent }
+        if backups.isEmpty {
+            storageProblem = "保存データの一部を読み込めませんでした。"
+        } else {
+            storageProblem = "保存データの一部を読み込めませんでした。元のファイルは \(backups.joined(separator: "、")) として残してあります。"
+        }
+        log.error("Data files could not be read completely; backups: \(backups.joined(separator: ", "), privacy: .public)")
+    }
+
+    /// Picks up changes another program made to workspaces.json since the app last read or wrote
+    /// it: workspaces saved with the `lanekeep` command, or a hand edit.
+    private func syncWorkspacesWithFile() {
+        guard isStarted, !isPreview, store.workspacesStamp != workspacesStamp else { return }
+        let load = store.loadWorkspaces()
+        workspacesStamp = load.stamp
+        if let problem = load.problem {
+            reportLoadProblems(backups: [load.backupOfUnreadableFile])
+            // Nothing usable in the file: keep what the app has; it is written back on the next save.
+            if problem == .unreadable {
+                return
+            }
+        }
+        let merged = WorkspaceMerge.merge(
+            local: workspaces,
+            file: load.value,
+            changedLocally: changedWorkspaceIDs,
+            deletedLocally: deletedWorkspaceIDs
+        )
+        guard merged != workspaces else { return }
+        log.info("workspaces.json was changed by another program; \(merged.count) workspaces now")
+        workspaces = merged
+        assignMissingShortcuts()
+        shortcuts.registerHandlers(for: workspaces)
+        if case .workspace(let id) = settingsPane, workspace(id) == nil {
+            settingsPane = workspaces.first.map { .workspace($0.id) } ?? .general
         }
     }
 
@@ -630,8 +760,12 @@ final class AppModel {
     private func saveWorkspacesNow() {
         saveWorkspacesTask?.cancel()
         saveWorkspacesTask = nil
+        // Do not write over what another program saved in the meantime.
+        syncWorkspacesWithFile()
         do {
-            try store.saveWorkspaces(workspaces)
+            workspacesStamp = try store.saveWorkspaces(workspaces)
+            changedWorkspaceIDs.removeAll()
+            deletedWorkspaceIDs.removeAll()
         } catch {
             log.error("Saving workspaces failed: \(error.localizedDescription, privacy: .public)")
             storageProblem = "ワークスペースを保存できませんでした（\(error.localizedDescription)）"
@@ -689,6 +823,7 @@ extension AppModel {
         case .restoring:
             model.activeRestore = ActiveRestore(
                 workspaceID: PreviewData.home.id,
+                trigger: .manual,
                 progress: RestoreProgress(completed: 3, total: 6)
             )
         case .finished:

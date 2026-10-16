@@ -20,12 +20,14 @@ public struct WorkspaceDocument: Codable, Equatable, Sendable {
     }
 
     /// Accepts `{"version": 1, "workspaces": [...]}` as well as a bare array. A broken entry does
-    /// not make the other workspaces unreadable; it is counted in `unreadableEntries`.
+    /// not make the other workspaces unreadable; it is counted in `unreadableEntries`. An object
+    /// without a `workspaces` list is not a workspace file (e.g. a misspelled key in a hand edit)
+    /// and fails, so that it is kept instead of being overwritten with an empty list.
     public init(from decoder: any Decoder) throws {
         let list: LossyList<Workspace>
         if let container = try? decoder.container(keyedBy: CodingKeys.self) {
             version = try container.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion
-            list = try container.decodeIfPresent(LossyList<Workspace>.self, forKey: .workspaces) ?? LossyList()
+            list = try container.decode(LossyList<Workspace>.self, forKey: .workspaces)
         } else {
             version = Self.currentVersion
             list = try LossyList<Workspace>(from: decoder)
@@ -66,15 +68,48 @@ struct LossyList<Element: Decodable>: Decodable {
     }
 }
 
+/// What was wrong with a file that was read.
+public enum StoreProblem: Equatable, Sendable {
+    /// Nothing in the file could be used (not JSON, wrong structure, or not readable at all).
+    case unreadable
+    /// This many entries could not be read and were left out.
+    case partlyUnreadable(entries: Int)
+}
+
+/// What to do with a file that cannot be read completely.
+public enum UnreadableFileHandling: Sendable {
+    /// Keep a copy next to it (`<name>.unreadable-<date>.json`) before the program writes the file
+    /// again. A file that cannot be used at all is moved aside. For the app, which saves often.
+    case backUp
+    /// Leave the file alone, for programs that only read, or refuse to write after a problem.
+    case leave
+}
+
+/// One version of a file on disk, to notice when another program changed it.
+public struct FileStamp: Equatable, Sendable {
+    public var modificationDate: Date
+    public var size: Int
+
+    public init(modificationDate: Date, size: Int) {
+        self.modificationDate = modificationDate
+        self.size = size
+    }
+}
+
 /// The result of reading a file.
 public struct StoreLoad<Value: Sendable>: Sendable {
     public var value: Value
-    /// Set when (part of) the file could not be read. The original file was kept at this location.
+    public var problem: StoreProblem?
+    /// Where the unreadable file was kept, with `.backUp`.
     public var backupOfUnreadableFile: URL?
+    /// The version of the file that was read; `nil` when there was no file.
+    public var stamp: FileStamp?
 
-    public init(value: Value, backupOfUnreadableFile: URL? = nil) {
+    public init(value: Value, problem: StoreProblem? = nil, backupOfUnreadableFile: URL? = nil, stamp: FileStamp? = nil) {
         self.value = value
+        self.problem = problem
         self.backupOfUnreadableFile = backupOfUnreadableFile
+        self.stamp = stamp
     }
 }
 
@@ -102,37 +137,71 @@ public struct LaneKeepStore: Sendable {
         directory.appendingPathComponent("preferences.json", isDirectory: false)
     }
 
-    public func loadWorkspaces() -> StoreLoad<[Workspace]> {
-        guard let data = try? Data(contentsOf: workspacesURL) else {
+    public func loadWorkspaces(unreadableFile handling: UnreadableFileHandling = .backUp) -> StoreLoad<[Workspace]> {
+        let url = workspacesURL
+        let fileStamp = stamp(of: url)
+        guard FileManager.default.fileExists(atPath: url.path) else {
             // A missing file is the normal first-launch case.
             return StoreLoad(value: [])
         }
-        do {
-            let document = try Self.makeDecoder().decode(WorkspaceDocument.self, from: data)
-            let backup = document.unreadableEntries > 0 ? backUp(workspacesURL, move: false) : nil
-            return StoreLoad(value: document.workspaces, backupOfUnreadableFile: backup)
-        } catch {
-            return StoreLoad(value: [], backupOfUnreadableFile: backUp(workspacesURL, move: true))
+        guard let data = try? Data(contentsOf: url),
+              let document = try? Self.makeDecoder().decode(WorkspaceDocument.self, from: data)
+        else {
+            let backup = handling == .backUp ? backUp(url, move: true) : nil
+            // A file that was moved aside is no longer there.
+            return StoreLoad(value: [], problem: .unreadable, backupOfUnreadableFile: backup, stamp: backup == nil ? fileStamp : nil)
         }
+        guard document.unreadableEntries == 0 else {
+            let backup = handling == .backUp ? backUp(url, move: false) : nil
+            return StoreLoad(
+                value: document.workspaces,
+                problem: .partlyUnreadable(entries: document.unreadableEntries),
+                backupOfUnreadableFile: backup,
+                stamp: fileStamp
+            )
+        }
+        return StoreLoad(value: document.workspaces, stamp: fileStamp)
     }
 
-    public func saveWorkspaces(_ workspaces: [Workspace]) throws {
+    /// Writes the workspaces and returns the version of the file that was written.
+    @discardableResult
+    public func saveWorkspaces(_ workspaces: [Workspace]) throws -> FileStamp? {
         try save(WorkspaceDocument(workspaces: workspaces), to: workspacesURL)
+        return stamp(of: workspacesURL)
     }
 
-    public func loadPreferences() -> StoreLoad<Preferences> {
-        guard let data = try? Data(contentsOf: preferencesURL) else {
+    public func loadPreferences(unreadableFile handling: UnreadableFileHandling = .backUp) -> StoreLoad<Preferences> {
+        let url = preferencesURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
             return StoreLoad(value: Preferences())
         }
-        do {
-            return StoreLoad(value: try Self.makeDecoder().decode(Preferences.self, from: data))
-        } catch {
-            return StoreLoad(value: Preferences(), backupOfUnreadableFile: backUp(preferencesURL, move: true))
+        guard let data = try? Data(contentsOf: url),
+              let preferences = try? Self.makeDecoder().decode(Preferences.self, from: data)
+        else {
+            let backup = handling == .backUp ? backUp(url, move: true) : nil
+            return StoreLoad(value: Preferences(), problem: .unreadable, backupOfUnreadableFile: backup, stamp: stamp(of: url))
         }
+        return StoreLoad(value: preferences, stamp: stamp(of: url))
     }
 
     public func savePreferences(_ preferences: Preferences) throws {
         try save(preferences, to: preferencesURL)
+    }
+
+    /// The current version of the workspaces file, or `nil` when there is none.
+    public var workspacesStamp: FileStamp? {
+        stamp(of: workspacesURL)
+    }
+
+    func stamp(of url: URL) -> FileStamp? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return nil
+        }
+        let size = (attributes[.size] as? NSNumber)?.intValue
+            ?? (attributes[.size] as? UInt64).map { Int($0) }
+            ?? (attributes[.size] as? Int)
+            ?? 0
+        return FileStamp(modificationDate: attributes[.modificationDate] as? Date ?? .distantPast, size: size)
     }
 
     // MARK: - Coding

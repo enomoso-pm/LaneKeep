@@ -283,7 +283,7 @@ private struct MarkerEditor: View {
               let app = RunningApps.regularApps().first(where: { $0.bundleID == bundleID }) else {
             return []
         }
-        let windows = await Task.detached { WindowCatalog.windows(of: app) }.value
+        let windows = await Task.detached { WindowCatalog.windows(of: app) ?? [] }.value
         var seen = Set<String>()
         return windows.map(\.title).filter { !$0.isEmpty && seen.insert($0).inserted }.prefix(6).map { $0 }
     }

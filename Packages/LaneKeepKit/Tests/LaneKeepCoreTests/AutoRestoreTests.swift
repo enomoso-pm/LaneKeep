@@ -21,10 +21,20 @@ struct AutoRestoreTrackerTests {
         #expect(tracker.evaluate(currentSignature: "A|B") == nil)
     }
 
-    @Test("Unplugging and plugging back in before things settle is no change")
+    @Test("A display that drops out and comes back before things settle is a change")
     func backAndForth() {
         var tracker = AutoRestoreTracker(initialSignature: "A|B")
-        // Only the state after the debounce is evaluated.
+        tracker.noteSignature("A")
+        tracker.noteSignature("A|B")
+        #expect(tracker.evaluate(currentSignature: "A|B") == .displaysChanged)
+        #expect(tracker.evaluate(currentSignature: "A|B") == nil)
+    }
+
+    @Test("Notifications that keep the same displays are no change")
+    func sameSignatureNotifications() {
+        var tracker = AutoRestoreTracker(initialSignature: "A|B")
+        tracker.noteSignature("A|B")
+        tracker.noteSignature("")
         #expect(tracker.evaluate(currentSignature: "A|B") == nil)
     }
 
