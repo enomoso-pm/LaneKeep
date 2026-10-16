@@ -25,14 +25,20 @@ jobs:
         run: swift test --package-path Packages/LaneKeepKit
 
   macos:
-    name: Build and test (macOS)
+    name: macOS (Xcode ${{ matrix.xcode }})
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported Xcode and the newest one on the runner.
+        xcode: ["16.0", "26.3"]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
       - name: Toolchain
         run: |
-          ls -d /Applications/Xcode*.app || true
           xcodebuild -version
           swift --version
       - name: Test LaneKeepKit
@@ -40,12 +46,14 @@ jobs:
       - name: Build the lanekeep command
         run: swift build --package-path Packages/LaneKeepKit --configuration release --product lanekeep
       - name: Build the app
-        if: hashFiles('LaneKeep.xcodeproj/project.pbxproj') != ''
         run: |
           xcodebuild \
             -project LaneKeep.xcodeproj \
             -scheme LaneKeep \
-            -configuration Debug \
-            -destination 'platform=macOS' \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             build
+      - name: Show the resolved packages
+        run: cat LaneKeep.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved || true

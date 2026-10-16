@@ -1,0 +1,6 @@
+// Copy this file to Config/Local.xcconfig (it is ignored by git) and fill in your team ID.
+// Signing with a real certificate keeps the accessibility permission across rebuilds.
+// Find the team ID in Xcode › Settings › Accounts, or at developer.apple.com/account.
+
+DEVELOPMENT_TEAM = ABCDE12345
+CODE_SIGN_IDENTITY = Apple Development

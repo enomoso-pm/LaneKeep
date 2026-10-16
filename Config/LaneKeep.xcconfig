@@ -1,0 +1,16 @@
+// Build settings of the LaneKeep app target.
+//
+// macOS remembers the accessibility permission per code signature. With the default ad-hoc
+// signature ("Sign to Run Locally") every rebuild looks like a new app, so the permission has to be
+// granted again. To keep it across builds, copy Local.xcconfig.example to Local.xcconfig and enter
+// your development team.
+
+PRODUCT_BUNDLE_IDENTIFIER = io.github.enomoso-pm.LaneKeep
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

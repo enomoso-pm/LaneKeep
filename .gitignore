@@ -14,3 +14,6 @@ Packages/LaneKeepKit/.swiftpm/
 
 # Local overrides (signing team etc.)
 Config/Local.xcconfig
+
+# Not committed on purpose: Xcode 16 resolves KeyboardShortcuts 2.x, Xcode 26+ resolves 3.x.
+LaneKeep.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
