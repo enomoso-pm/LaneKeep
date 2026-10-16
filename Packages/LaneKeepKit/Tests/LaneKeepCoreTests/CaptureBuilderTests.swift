@@ -166,6 +166,26 @@ struct CaptureBuilderTests {
         #expect(rules.first { $0.bundleID == "com.example.notes" }?.launchIfClosed == true)
     }
 
+    @Test("Overwriting matches windows to the rule at their place, not by order alone")
+    func overwriteMatchesByPlace() throws {
+        // Two Terminal rules: left half launches, right half does not. Window #0 is minimized, so
+        // only #1 (on the right) is listed; it must keep the right rule's options.
+        let left = Fixtures.rule("Terminal", bundleID: "com.example.terminal", index: 0, display: "EXT-27", 0, 0, 50, 100, launch: true)
+        let right = Fixtures.rule("Terminal", bundleID: "com.example.terminal", index: 1, display: "EXT-27", 50, 0, 50, 100, launch: false)
+        let candidates = CaptureBuilder.candidates(
+            from: [
+                window("Terminal", index: 0, CGRect(x: 0, y: 25, width: 1280, height: 1415), minimized: true),
+                window("Terminal", index: 1, CGRect(x: 1280, y: 25, width: 1280, height: 1415))
+            ],
+            displays: displays
+        )
+        let rules = CaptureBuilder.rules(from: candidates, replacing: [left, right], launchIfClosedForNewWindows: true)
+        let rule = try #require(rules.first)
+        #expect(rules.count == 1)
+        #expect(rule.id == right.id)
+        #expect(rule.launchIfClosed == false)
+    }
+
     @Test("Suggested names")
     func suggestedNames() {
         #expect(CaptureBuilder.suggestedName(for: [Fixtures.builtinAlone], existingNames: []) == "ノートPCのみ")

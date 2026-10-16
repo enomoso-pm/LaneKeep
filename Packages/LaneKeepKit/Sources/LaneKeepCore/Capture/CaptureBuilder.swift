@@ -160,7 +160,13 @@ public enum CaptureBuilder {
             guard let appCandidates = candidatesByApp[bundleID]?.sorted(by: { $0.window.indexInApp < $1.window.indexInApp }) else {
                 continue
             }
-            let windows = appCandidates.map { MatchableWindow(title: $0.window.title, position: $0.window.indexInApp) }
+            let windows = appCandidates.map { candidate in
+                MatchableWindow(
+                    title: candidate.window.title,
+                    position: candidate.window.indexInApp,
+                    location: WindowLocation(displayUUID: candidate.displayUUID, relativeFrame: candidate.relativeFrame)
+                )
+            }
             for (ruleIndex, windowIndex) in WindowMatcher.assign(rules: rules, windows: windows).enumerated() {
                 if let windowIndex {
                     result[appCandidates[windowIndex].id] = rules[ruleIndex]
