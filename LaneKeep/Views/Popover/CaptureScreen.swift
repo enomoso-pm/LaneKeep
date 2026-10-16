@@ -122,7 +122,9 @@ struct CaptureScreen: View {
                     )
                 }
             )
-            .frame(height: 164)
+            .frame(height: 150)
+            // The mock leaves this much room under the map.
+            .padding(.bottom, 14)
         }
     }
 

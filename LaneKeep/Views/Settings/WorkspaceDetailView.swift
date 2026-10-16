@@ -36,6 +36,8 @@ struct WorkspaceDetailView: View {
                         }
                     )
                     .frame(height: 260)
+                    // The mock leaves this much room under the map.
+                    .padding(.bottom, 16)
                     WindowRuleTable(
                         workspace: workspace,
                         selection: $selectedRuleID,
