@@ -146,6 +146,7 @@ private struct RuleRow: View {
                     .font(.lane(13))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
+                    .help(rule.appName)
             },
             marker: HStack(spacing: 4) {
                 Text(DisplayText.marker(for: rule))
@@ -153,6 +154,7 @@ private struct RuleRow: View {
                     .foregroundStyle(Theme.sub)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(DisplayText.marker(for: rule))
                 if isHovering || isSelected {
                     Button("変更") { isEditingMarker = true }
                         .buttonStyle(.link)

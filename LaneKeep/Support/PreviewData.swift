@@ -49,6 +49,7 @@ enum PreviewData {
         name: "自宅デスク",
         color: .blue,
         icon: .home,
+        shortcut: "preview.home",
         displays: [DisplayInfo(external27), DisplayInfo(builtin)],
         windows: [
             rule("Safari", "com.apple.Safari", on: external27, 2, 3, 48, 94),
@@ -81,6 +82,7 @@ enum PreviewData {
             name: "オフィス",
             color: .orange,
             icon: .office,
+            shortcut: "preview.office",
             displays: [DisplayInfo(office24), DisplayInfo(center), DisplayInfo(officeBuiltin)],
             windows: [
                 rule("Chrome", "com.google.Chrome", on: center, 2, 3, 60, 94),
@@ -109,6 +111,7 @@ enum PreviewData {
             name: "ノートPCのみ",
             color: .gray,
             icon: .laptop,
+            shortcut: "preview.laptop",
             displays: [DisplayInfo(alone)],
             windows: [
                 rule("Safari", "com.apple.Safari", on: alone, 2, 3, 64, 94),

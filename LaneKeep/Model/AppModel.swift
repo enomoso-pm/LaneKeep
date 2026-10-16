@@ -85,6 +85,8 @@ final class AppModel {
     @ObservationIgnored private var pendingAutoTrigger: AutoRestoreTrigger?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var isStarted = false
+    /// Set on the sample models of previews and UI snapshots, which are not in the menu bar.
+    @ObservationIgnored private var isPreview = false
     private let log = Logger(subsystem: "LaneKeep", category: "app")
 
     private init() {}
@@ -288,6 +290,7 @@ final class AppModel {
     // MARK: - Menu bar window
 
     func popoverVisibilityChanged(_ isVisible: Bool, window: NSWindow) {
+        guard !isPreview else { return }
         StatusItemBridge.menuWindow = window
         if isVisible {
             refreshDisplays()
@@ -673,6 +676,7 @@ extension AppModel {
         PreviewData.installShortcutTexts()
         let model = AppModel()
         model.isStarted = true
+        model.isPreview = true
         model.displays = PreviewData.homeDisplays
         model.workspaces = scenario == .empty ? [] : PreviewData.workspaces
         model.isAccessibilityGranted = scenario != .noPermission

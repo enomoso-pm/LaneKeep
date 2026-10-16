@@ -5,6 +5,7 @@
 #   make install           Copy it to /Applications and open it
 #   make test              Run the unit tests of LaneKeepKit
 #   make cli               Build the lanekeep command-line tool
+#   make snapshots         Draw every screen with sample data into build/snapshots (Debug build)
 #   make reset-permission  Forget the accessibility permission (e.g. after re-signing)
 #   make clean             Remove build products
 
@@ -16,7 +17,7 @@ APP           := $(BUILD_DIR)/Build/Products/$(CONFIGURATION)/LaneKeep.app
 PACKAGE       := Packages/LaneKeepKit
 BUNDLE_ID     := io.github.enomoso-pm.LaneKeep
 
-.PHONY: build run install test cli reset-permission clean
+.PHONY: build run install test cli snapshots reset-permission clean
 
 build:
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) \
@@ -37,6 +38,12 @@ test:
 cli:
 	swift build --package-path $(PACKAGE) --configuration release --product lanekeep
 	@echo "Built $(PACKAGE)/.build/release/lanekeep"
+
+snapshots:
+	$(MAKE) build CONFIGURATION=Debug
+	"$(BUILD_DIR)/Build/Products/Debug/LaneKeep.app/Contents/MacOS/LaneKeep" \
+		--render-ui-snapshots "$(BUILD_DIR)/snapshots" > /dev/null
+	@echo "Wrote $(BUILD_DIR)/snapshots"
 
 reset-permission:
 	tccutil reset Accessibility $(BUNDLE_ID)

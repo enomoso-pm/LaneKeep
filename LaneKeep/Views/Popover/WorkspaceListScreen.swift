@@ -126,7 +126,6 @@ struct WorkspaceListScreen: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.bottom, 4)
             }
             .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: .infinity)
