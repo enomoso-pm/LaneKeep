@@ -118,6 +118,32 @@ struct StoreTests {
         #expect(rule.relativeFrame == CGRect(x: 0, y: 0, width: 0.5, height: 1))
     }
 
+    @Test("Signatures saved before the built-in display was left out are made again")
+    func migratesSignatures() throws {
+        let store = try makeStore()
+        let json = """
+        {"version": 1, "workspaces": [
+          {"name": "自宅", "displaySignature": "BUILTIN|EXT-27",
+           "displays": [{"uuid": "EXT-27", "isMain": true}, {"uuid": "BUILTIN", "isBuiltin": true}],
+           "windows": []},
+          {"name": "ノートPCのみ", "displaySignature": "BUILTIN",
+           "displays": [{"uuid": "BUILTIN", "isMain": true, "isBuiltin": true}],
+           "windows": []},
+          {"name": "画面の記録なし", "displaySignature": "X|Y", "windows": []}
+        ]}
+        """
+        try Data(json.utf8).write(to: store.workspacesURL)
+
+        let workspaces = store.loadWorkspaces().value
+
+        #expect(workspaces.map(\.displaySignature) == ["EXT-27", "BUILTIN", "X|Y"])
+        // The next save writes the new signature.
+        try store.saveWorkspaces(workspaces)
+        let text = try String(contentsOf: store.workspacesURL, encoding: .utf8)
+        #expect(text.contains("\"displaySignature\" : \"EXT-27\""))
+        #expect(!text.contains("BUILTIN|EXT-27"))
+    }
+
     @Test("Preferences survive a round trip")
     func preferences() throws {
         let store = try makeStore()

@@ -7,11 +7,44 @@ import Testing
 
 @Suite("Display signature and identity (spec §6.2)")
 struct DisplaySignatureTests {
+    func external(_ uuid: String, x: CGFloat = 0) -> DisplaySnapshot {
+        DisplaySnapshot(
+            uuid: uuid,
+            name: uuid,
+            frame: CGRect(x: x, y: 0, width: 1920, height: 1080),
+            visibleFrame: CGRect(x: x, y: 0, width: 1920, height: 1055),
+            isMain: x == 0
+        )
+    }
+
     @Test("The signature is the sorted UUIDs joined with |")
     func signature() {
-        #expect(DisplaySignature.make(["B", "C", "A"]) == "A|B|C")
-        #expect(DisplaySignature.make(["B", "A"]) == DisplaySignature.make(["A", "B"]))
-        #expect(DisplaySignature.make([String]()) == "")
+        #expect(DisplaySignature.make(for: [external("B"), external("C", x: 1920), external("A", x: 3840)]) == "A|B|C")
+        #expect(DisplaySignature.make(for: [external("B"), external("A", x: 1920)]) == DisplaySignature.make(for: [external("A"), external("B", x: 1920)]))
+        #expect(DisplaySignature.make(for: [DisplaySnapshot]()) == "")
+    }
+
+    @Test("Closing the lid does not change the signature")
+    func lidClosed() {
+        let lidOpen = DisplaySignature.make(for: [Fixtures.external27, Fixtures.builtin])
+        let lidClosed = DisplaySignature.make(for: [Fixtures.external27])
+        #expect(lidOpen == "EXT-27")
+        #expect(lidOpen == lidClosed)
+        // Also for the displays recorded in a workspace.
+        #expect(DisplaySignature.make(for: Fixtures.homeWorkspace.displays) == lidClosed)
+        // Several external displays: only the built-in one is left out.
+        #expect(DisplaySignature.make(for: Fixtures.officeDisplays) == "OFFICE-24|OFFICE-27")
+    }
+
+    @Test("With the built-in display alone, it is the signature (never empty)")
+    func builtinOnly() {
+        let signature = DisplaySignature.make(for: [Fixtures.builtinAlone])
+        #expect(signature == "BUILTIN")
+        #expect(!signature.isEmpty)
+        #expect(Fixtures.laptopWorkspace.displaySignature == "BUILTIN")
+        // So a laptop-only workspace still restores automatically.
+        var tracker = AutoRestoreTracker(initialSignature: "EXT-27")
+        #expect(tracker.evaluate(currentSignature: signature) == .displaysChanged)
     }
 
     @Test("Components round-trip")
@@ -143,8 +176,26 @@ struct WorkspaceAvailabilityTests {
 
     @Test("A missing display without windows does not count")
     func missingWithoutWindows() {
-        var workspace = Fixtures.homeWorkspace
-        workspace.windows.removeAll { $0.displayUUID == "BUILTIN" }
-        #expect(workspace.availability(for: [Fixtures.external27]) == .available)
+        var workspace = Fixtures.officeWorkspace
+        workspace.windows.removeAll { $0.displayUUID == "OFFICE-24" }
+        #expect(workspace.availability(for: [Fixtures.office27, Fixtures.officeBuiltin]) == .available)
+    }
+
+    @Test("Saved with the lid open, docked with the lid closed → matches")
+    func lidClosedMatches() {
+        #expect(Fixtures.homeWorkspace.availability(for: [Fixtures.external27]) == .matchesCurrent)
+        let chosen = AutoRestorePolicy.workspaceToRestore(
+            among: [Fixtures.laptopWorkspace, Fixtures.homeWorkspace],
+            currentSignature: DisplaySignature.make(for: [Fixtures.external27]),
+            trigger: .displaysChanged,
+            masterSwitch: true
+        )
+        #expect(chosen?.name == "自宅デスク")
+    }
+
+    @Test("Saved with the lid closed, docked with the lid open → matches")
+    func lidOpenMatches() {
+        let closed = Workspace(name: "クラムシェル", displays: [DisplayInfo(Fixtures.external27)], windows: Fixtures.homeWorkspace.windows)
+        #expect(closed.availability(for: Fixtures.homeDisplays) == .matchesCurrent)
     }
 }

@@ -8,7 +8,8 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
     public var icon: WorkspaceIcon
     /// Name of the KeyboardShortcuts entry that restores this workspace.
     public var shortcut: String?
-    /// Sorted UUIDs of the displays that were connected when the workspace was saved.
+    /// The signature of the displays that were connected when the workspace was saved (see
+    /// `DisplaySignature.make(for:)`).
     public var displaySignature: String
     public var displays: [DisplayInfo]
     public var windows: [WindowRule]
@@ -33,7 +34,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         self.color = color
         self.icon = icon
         self.shortcut = shortcut
-        self.displaySignature = DisplaySignature.make(displays.map(\.uuid))
+        self.displaySignature = DisplaySignature.make(for: displays)
         self.displays = displays
         self.windows = windows
         self.autoRestoreOnConnect = autoRestoreOnConnect
@@ -53,7 +54,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
     /// Replaces the recorded display configuration (and its signature).
     public mutating func setDisplays(_ newDisplays: [DisplayInfo]) {
         displays = newDisplays
-        displaySignature = DisplaySignature.make(newDisplays.map(\.uuid))
+        displaySignature = DisplaySignature.make(for: newDisplays)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -84,8 +85,11 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         var seenDisplays = Set<String>()
         displays = (try container.decodeIfPresent([DisplayInfo].self, forKey: .displays) ?? [])
             .filter { seenDisplays.insert($0.uuid).inserted }
-        displaySignature = try container.decodeIfPresent(String.self, forKey: .displaySignature)
-            ?? DisplaySignature.make(displays.map(\.uuid))
+        // The signature is made again from the displays: files written before the built-in
+        // display was left out of signatures still have it in theirs. Only a file without
+        // displays keeps the signature it states.
+        let storedSignature = try container.decodeIfPresent(String.self, forKey: .displaySignature)
+        displaySignature = displays.isEmpty ? (storedSignature ?? "") : DisplaySignature.make(for: displays)
         windows = try container.decodeIfPresent([WindowRule].self, forKey: .windows) ?? []
         autoRestoreOnConnect = try container.decodeIfPresent(Bool.self, forKey: .autoRestoreOnConnect) ?? true
         autoRestoreOnWake = try container.decodeIfPresent(Bool.self, forKey: .autoRestoreOnWake) ?? false

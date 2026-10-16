@@ -107,7 +107,7 @@ final class AppModel {
     // MARK: - Derived state
 
     var currentSignature: String {
-        DisplaySignature.make(displays.map(\.uuid))
+        DisplaySignature.make(for: displays)
     }
 
     var isRestoring: Bool {

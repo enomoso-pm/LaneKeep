@@ -2,7 +2,8 @@ import Foundation
 
 /// How a workspace relates to the displays that are connected right now.
 public enum WorkspaceAvailability: Equatable, Sendable {
-    /// The signature matches: exactly the saved displays are connected (blue border in the list).
+    /// The signature matches: the saved displays are connected (blue border in the list). With
+    /// external displays, the built-in display does not count, so closing the lid keeps the match.
     case matchesCurrent
     /// Some displays that hold windows of the workspace are not connected.
     case missingDisplays(count: Int)
@@ -24,7 +25,7 @@ extension Workspace {
     public func availability(for displays: [DisplaySnapshot]) -> WorkspaceAvailability {
         availability(
             currentDisplayUUIDs: Set(displays.map(\.uuid)),
-            currentSignature: DisplaySignature.make(displays.map(\.uuid))
+            currentSignature: DisplaySignature.make(for: displays)
         )
     }
 }

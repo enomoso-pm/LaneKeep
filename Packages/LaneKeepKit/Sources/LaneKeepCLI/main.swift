@@ -93,7 +93,7 @@ enum CLI {
 
     static func displays(json: Bool) -> Int32 {
         let displays = DisplayRoles.ordered(ScreenReader.currentDisplays())
-        let signature = DisplaySignature.make(displays.map(\.uuid))
+        let signature = DisplaySignature.make(for: displays)
         if json {
             let output = DisplaysOutput(
                 signature: signature,

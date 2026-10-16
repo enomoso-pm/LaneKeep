@@ -3,12 +3,25 @@ import Foundation
 import CoreGraphics
 #endif
 
-/// The "画面構成の署名": the UUIDs of all connected displays, sorted and joined with `|`
+/// The "画面構成の署名": the UUIDs of the connected displays, sorted and joined with `|`
 /// (spec §2, §6.2).
 public enum DisplaySignature {
     public static let separator: Character = "|"
 
-    public static func make<UUIDs: Sequence>(_ uuids: UUIDs) -> String where UUIDs.Element == String {
+    /// The signature of a display configuration. Everything that compares configurations uses
+    /// this one function.
+    ///
+    /// The built-in display is left out as soon as an external display is connected: a MacBook
+    /// docked with its lid closed has the same external displays as with the lid open, and should
+    /// match the same workspaces. With the built-in display alone, its UUID is the signature —
+    /// never an empty string, which means "no displays" and is ignored by automatic restores.
+    public static func make<Display: DisplayDescribing>(for displays: [Display]) -> String {
+        let externals = displays.filter { !$0.isBuiltin }
+        return joined((externals.isEmpty ? displays : externals).map(\.uuid))
+    }
+
+    /// The UUIDs sorted and joined.
+    static func joined<UUIDs: Sequence>(_ uuids: UUIDs) -> String where UUIDs.Element == String {
         uuids.sorted().joined(separator: String(separator))
     }
 

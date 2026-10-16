@@ -57,7 +57,7 @@ final class DisplayMonitor {
     }
 
     private func screenParametersDidChange() {
-        tracker.noteSignature(DisplaySignature.make(ScreenReader.currentDisplays().map(\.uuid)))
+        tracker.noteSignature(DisplaySignature.make(for: ScreenReader.currentDisplays()))
         onDisplaysChanged?()
         scheduleEvaluation()
     }
@@ -80,7 +80,7 @@ final class DisplayMonitor {
 
     private func evaluate() {
         pendingEvaluation = nil
-        let signature = DisplaySignature.make(ScreenReader.currentDisplays().map(\.uuid))
+        let signature = DisplaySignature.make(for: ScreenReader.currentDisplays())
         if let trigger = tracker.evaluate(currentSignature: signature) {
             onSettled?(trigger)
         }

@@ -132,7 +132,8 @@ struct CaptureBuilderTests {
             now: now
         )
         #expect(workspace.name == "自宅デスク")
-        #expect(workspace.displaySignature == "BUILTIN|EXT-27")
+        // The built-in display is not part of the signature when an external one is connected.
+        #expect(workspace.displaySignature == "EXT-27")
         #expect(workspace.displays.map(\.uuid) == ["EXT-27", "BUILTIN"])
         #expect(workspace.displays[0].visibleFrame == Fixtures.external27.visibleFrame)
         #expect(workspace.windows.count == 1)
