@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// The "画面構成の署名": the UUIDs of all connected displays, sorted and joined with `|`
 /// (spec §2, §6.2).

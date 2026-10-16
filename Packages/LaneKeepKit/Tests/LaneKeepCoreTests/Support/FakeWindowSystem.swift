@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 @testable import LaneKeepCore
 
 /// A window of the fake system. Identity is the object identity.

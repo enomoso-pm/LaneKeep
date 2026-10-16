@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Where one window should go (spec §5).
 public struct WindowRule: Codable, Equatable, Sendable, Identifiable {

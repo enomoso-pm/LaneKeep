@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Puts the windows of a workspace back where they were saved (spec §6.4).
 ///

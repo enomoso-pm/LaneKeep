@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// What every display description (saved or live) has in common.
 public protocol DisplayDescribing {

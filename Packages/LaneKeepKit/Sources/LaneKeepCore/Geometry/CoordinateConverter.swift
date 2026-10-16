@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Converts between the two global coordinate systems macOS uses (spec §6.5).
 ///

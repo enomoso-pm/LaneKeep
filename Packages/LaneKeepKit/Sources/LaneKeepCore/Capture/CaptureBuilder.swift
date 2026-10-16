@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// A window that is on screen right now (read through the Accessibility API).
 public struct WindowSnapshot: Equatable, Sendable, Identifiable {

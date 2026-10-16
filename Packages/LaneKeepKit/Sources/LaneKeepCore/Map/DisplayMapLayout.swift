@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// A display drawn on the map ("配置図").
 public struct MapDisplay: Equatable, Sendable, Identifiable {

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Wording shared by the menu bar popover, the settings window and the command-line tool.
 public enum DisplayText {

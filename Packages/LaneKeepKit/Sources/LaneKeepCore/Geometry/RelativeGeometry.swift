@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Window frames are stored relative to the visible frame of their display so that a layout
 /// survives resolution and scaling changes (spec §5). All rects here use the top-left origin of the

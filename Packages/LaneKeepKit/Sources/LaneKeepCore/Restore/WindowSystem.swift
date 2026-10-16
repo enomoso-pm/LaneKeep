@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Whether an app is running.
 public enum RunningState: Equatable, Sendable {

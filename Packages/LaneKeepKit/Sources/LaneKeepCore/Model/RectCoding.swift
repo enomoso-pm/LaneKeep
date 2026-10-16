@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Encodes a `CGRect` as `{"x": …, "y": …, "width": …, "height": …}` so that `workspaces.json`
 /// stays readable. Decoding also accepts Foundation's default `[[x, y], [width, height]]` form.

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Timing of a restore (spec §6.4: wait up to 10 seconds for a window, checking every 250 ms).
 public struct RestoreTiming: Equatable, Sendable {
