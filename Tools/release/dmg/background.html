@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>LaneKeep .dmg background</title>
+<!--
+  The .dmg window picture (background.png and background@2x.png, used by Tools/release/make_dmg.sh).
+  Redraw: bash Tools/release/dmg/render_background.sh (Google Chrome at 1x and 2x).
+  Same design as the Kikiwake .dmg, plus step 5 (LaneKeep lives in the menu bar and asks for the
+  accessibility permission).
+
+  - The window (window_rect in dmgbuild_settings.py) is 800×760 with the title bar; the content is about
+    727 high on macOS 26 and 732 on macOS 14 and 15. Everything that matters is in the top-left 800×710.
+  - The picture continues in the same color up to 1920×1200: Finder pins it to the top left and does
+    not scale it, so a larger window shows no white.
+  - The ground color #5d7892 reads at 4.6:1 against both Finder's black (light mode) and white (dark
+    mode) icon names.
+  - Icon centers match icon_locations in dmgbuild_settings.py: LaneKeep 230,80; アプリケーション 570,80;
+    はじめに読む.txt 84,648; Read Me First.txt 204,648; 設定を開く 414,648. Nothing here has to line up
+    with an icon exactly: on one macOS 26.2 Mac, Finder drew every icon about 21 px right and 15 px
+    lower than its position, so the text keeps clear of the icons and their names by more than that.
+    (That is also why 設定を開く has no picture drawn under it any more.)
+  - The screens in 2, 3, 4 and 5 are real (shots/: macOS 26.2, captured with screencapture -l on
+    2026-10-17, cropped, metadata removed; 4 is the button part of its dialog). A ring marks what to
+    press; its box is the button's pixel box in the shot, in percent (--x, --y, --w, --h on .ring).
+  - Missing shots show a dashed box instead (onerror), so the page can be drawn before the shots exist.
+-->
+<style>
+  :root {
+    --bg: #5d7892;
+    --card: #ffffff;
+    --ink: #1d1f22;
+    --ink-2: #3d4046;
+    --ink-3: #5d6168;
+    --accent: #3d6a96;
+    --ring: #e8590c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1200px; overflow: hidden; background: var(--bg); }
+  body { position: relative; font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif; color: #fff; -webkit-font-smoothing: antialiased; font-feature-settings: "palt"; }
+
+  .num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; flex: none; }
+  .drag-cap .num { background: #fff; color: var(--bg); }
+
+  .drag-cap { position: absolute; left: 290px; width: 220px; top: 30px; display: flex; gap: 7px; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+  .drag-arrow { position: absolute; left: 0; top: 0; }
+
+  .lead { position: absolute; left: 20px; top: 172px; }
+  .lead h1 { font-size: 15.5px; font-weight: 600; }
+  .lead p { font-size: 12px; margin-top: 3px; }
+
+  .card { position: absolute; background: var(--card); border-radius: 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, .16); padding: 12px 12px 0; color: var(--ink); }
+  .card h2 { display: flex; gap: 7px; align-items: flex-start; font-size: 13.5px; font-weight: 600; line-height: 20px; }
+  .card .note { position: absolute; left: 12px; right: 12px; bottom: 10px; font-size: 11px; line-height: 1.5; color: var(--ink-3); }
+  .card .note b { color: var(--ink); font-weight: 600; }
+  .steps .card { top: 220px; height: 276px; }
+
+  .shot { position: absolute; }
+  .shot img { display: block; width: 100%; }
+  .shot.missing { height: var(--placeholder-height, 120px); border: 1.5px dashed #b8bcc4; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #8a8f98; }
+  .shot.missing::after { content: "（画面の写真）"; }
+  .shot.missing .ring { display: none; }
+  /* The ring: the button's box in the shot, in percent, grown by 4 px on each side. */
+  .ring { position: absolute; border: 2.5px solid var(--ring); border-radius: var(--r, 10px);
+    left: calc(var(--x) * 1% - 4px); top: calc(var(--y) * 1% - 4px);
+    width: calc(var(--w) * 1% + 8px); height: calc(var(--h) * 1% + 8px); }
+
+  .c2 { left: 16px; width: 196px; }
+  .c2 .shot { left: 23px; top: 56px; width: 150px; --placeholder-height: 164px; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .18)); }
+
+  .c3 { left: 224px; width: 380px; }
+  .c3 .shot { left: 12px; top: 58px; width: 356px; --placeholder-height: 141px; }
+  .c3 .shot img { border-radius: 8px; box-shadow: 0 0 0 1px #e3e3de; }
+
+  .c4 { left: 616px; width: 168px; }
+  .c4 .ask { font-size: 11.5px; line-height: 1.5; color: var(--ink-2); margin-top: 8px; }
+  .c4 .ask b { font-weight: 600; color: var(--ink); }
+  .c4 .shot { left: 12px; top: 112px; width: 144px; --placeholder-height: 64px; }
+  .c4 .shot img { border-radius: 10px; }
+
+  .c5 { left: 16px; top: 508px; width: 768px; height: 88px; }
+  .c5 .text { position: absolute; left: 12px; top: 12px; width: 390px; }
+  .c5 p { font-size: 11.5px; line-height: 1.55; color: var(--ink-2); margin: 5px 0 0 27px; }
+  .c5 .where { position: absolute; right: 14px; top: 14px; width: 340px; font-size: 10.5px; color: var(--ink-3); }
+  .c5 .shot { right: 14px; top: 36px; width: 340px; --placeholder-height: 30px; }
+  .c5 .shot img { border-radius: 6px; box-shadow: 0 0 0 1px #e3e3de; }
+
+  .shortcut { position: absolute; left: 478px; top: 626px; width: 306px; }
+  .shortcut b { display: block; font-size: 13px; font-weight: 600; }
+  .shortcut span { display: block; font-size: 11.5px; line-height: 1.5; margin-top: 3px; }
+</style>
+</head>
+<body>
+  <div class="drag-cap"><span class="num">1</span>「アプリケーション」へドラッグ</div>
+  <svg class="drag-arrow" width="800" height="160" viewBox="0 0 800 160" aria-hidden="true">
+    <line x1="306" y1="80" x2="486" y2="80" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <polyline points="473,68 489,80 473,92" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+
+  <div class="lead">
+    <h1>初めて開くときだけ、2 → 3 → 4 の順に押します（2 回目からは普通に開けます）</h1>
+    <p>警告は、Apple の有料の開発者登録をしていないために出るもので、壊れているわけではありません。</p>
+  </div>
+
+  <div class="steps">
+    <section class="card c2">
+      <h2><span class="num">2</span><span>LaneKeep を開いたら<br>出る警告で「完了」</span></h2>
+      <div class="shot"><img src="shots/gatekeeper@2x.png" alt="" onerror="this.parentNode.classList.add('missing'); this.remove()"><span class="ring" style="--x: 6.15; --y: 84.56; --w: 87.69; --h: 9.82; --r: 12px"></span></div>
+      <p class="note"><b>青い「ゴミ箱に入れる」は押さないでください。</b></p>
+    </section>
+
+    <section class="card c3">
+      <h2><span class="num">3</span><span>「システム設定」→「プライバシーとセキュリティ」<br>→ いちばん下の「このまま開く」</span></h2>
+      <div class="shot"><img src="shots/security@2x.png" alt="" onerror="this.parentNode.classList.add('missing'); this.remove()"><span class="ring" style="--x: 76.79; --y: 46.43; --w: 20.93; --h: 13.19; --r: 8px"></span></div>
+      <p class="note">下の「設定を開く」で開き、いちばん下まで送るとあります。押したら、Touch ID かパスワードで確かめます。</p>
+    </section>
+
+    <section class="card c4">
+      <h2><span class="num">4</span><span>もう一度<br>「このまま開く」</span></h2>
+      <p class="ask"><b>「“LaneKeep” を開きますか?」</b>と出たら、まん中のボタンです。</p>
+      <div class="shot"><img src="shots/open-anyway@2x.png" alt="" onerror="this.parentNode.classList.add('missing'); this.remove()"><span class="ring" style="--x: 3.28; --y: 37.04; --w: 93.44; --h: 25.93; --r: 12px"></span></div>
+      <p class="note"><b>青い「ゴミ箱に入れる」は押さないでください。</b>出ないときは、LaneKeep を開き直してください。</p>
+    </section>
+  </div>
+
+  <section class="card c5">
+    <div class="text">
+      <h2><span class="num">5</span><span>開くと、画面の右上（メニューバー）に案内が出ます</span></h2>
+      <p>案内の「システム設定を開く」から、LaneKeep をオンにします。ウィンドウを動かすための許可です。Dock には出ません。</p>
+    </div>
+    <p class="where">システム設定 ›「プライバシーとセキュリティ」›「アクセシビリティ」</p>
+    <div class="shot"><img src="shots/accessibility@2x.png" alt="" onerror="this.parentNode.classList.add('missing'); this.remove()"><span class="ring" style="--x: 89.89; --y: 36.25; --w: 7.93; --h: 40; --r: 10px"></span></div>
+  </section>
+
+  <p class="shortcut"><b>← ダブルクリックで、システム設定が開きます</b><span>「プライバシーとセキュリティ」のいちばん下が 3 の欄です。設定を開くだけで、ほかには何もしません。</span></p>
+</body>
+</html>

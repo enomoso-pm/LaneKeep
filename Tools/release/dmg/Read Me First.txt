@@ -1,0 +1,50 @@
+Getting started with LaneKeep
+
+LaneKeep remembers, for each set of displays, which app's windows go on which display, where, and at
+what size, and puts them back. It lives in the menu bar (top right of the screen) and has no Dock icon.
+Its screens are in Japanese.
+It does not use the internet. The layouts it remembers are saved only on this Mac
+(~/Library/Application Support/LaneKeep/).
+
+
+1. Drag "LaneKeep" onto the "アプリケーション" (Applications) shortcut.
+
+2. The first time you open LaneKeep, macOS asks you to confirm it.
+   LaneKeep isn't registered with Apple's paid developer program, so at first macOS says it can't be opened.
+
+   macOS 15 or later:
+     1) Open "LaneKeep" in Applications. When the warning “LaneKeep” Not Opened appears, click "Done".
+        Don't click the blue "Move to Trash" button. The warning appears every time you try to open
+        LaneKeep, so go on to step 2 instead of opening it again.
+     2) Double-click "設定を開く" (Open Settings) in this disk image. It opens System Settings >
+        Privacy & Security; scroll down to the "Security" section at the bottom. (Or choose Apple menu >
+        System Settings > Privacy & Security and scroll down.)
+     3) Next to “LaneKeep” was blocked to protect your Mac., click "Open Anyway" and confirm with Touch ID
+        or your password. (This button is available for about an hour after the warning. If it isn't there,
+        start again from step 1.)
+     4) When asked Open “LaneKeep”?, click "Open Anyway", the middle button. LaneKeep opens.
+        Again, don't click the blue "Move to Trash". (If you're not asked, open LaneKeep again.)
+
+   macOS 14:
+     In Finder, Control-click "LaneKeep", choose "Open", then click "Open" again.
+
+   After the first time, it opens normally. After you replace it with a new version, you need to confirm it again.
+
+3. LaneKeep then opens its menu at the top right of the screen and asks for the accessibility permission
+   ("ウィンドウを動かす許可が必要です"). Click "システム設定を開く" (Open System Settings) and turn on LaneKeep in
+   Privacy & Security > Accessibility. LaneKeep uses it to read the positions of other apps' windows and to
+   move them. Once it is on, LaneKeep moves on by itself. If it still says the permission is missing
+   ("まだ許可されていません"), click "あとで" (Later) and then "終了" (Quit) in its menu, and open it again.
+
+4. Using it
+   - Arrange your windows, then choose "今の配置を保存…" (Save the current layout) in the menu and name it.
+   - To put them back, click "復元" (Restore) in the list, or press the workspace's shortcut (⌃⌥1, ⌃⌥2, …).
+     ⌃⌥L also opens the menu.
+   - With "つないだら自動で復元" (Restore automatically on connect) on, connecting the same displays as when you
+     saved puts the windows back by itself.
+   - To have LaneKeep from the moment you log in, turn on "ログイン時に起動" (Launch at login) under "一般"
+     (General) in its settings (the gear in the menu).
+
+
+Requires macOS 14 or later (Apple silicon or Intel).
+Includes KeyboardShortcuts (MIT License; full text in LaneKeep.app at Contents/Resources/ThirdPartyNotices.txt).
