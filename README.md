@@ -7,7 +7,11 @@
 - **スリープ解除時の自動復元**（ワークスペースごとに選択）
 - 足りない画面がある場合はメイン画面などへ寄せて配置し、結果を1行で知らせます
 
-アプリ名は仕様書どおり仮のものです。
+## ダウンロード
+
+[Releases](https://github.com/enomoso-pm/LaneKeep/releases/latest) から `LaneKeep_<版>_universal.dmg` を落として開き、LaneKeep を「アプリケーション」へドラッグします。macOS 14 以降の、Apple シリコンと Intel の Mac で動きます。
+
+Apple の公証を受けていないので、初めて開くときだけ macOS の確かめが要ります。macOS 15 以降では、警告が出たら「完了」を押し（青い「ゴミ箱に入れる」は押さないでください）、「システム設定」→「プライバシーとセキュリティ」のいちばん下で「このまま開く」を押します。macOS 14 では、Finder で LaneKeep を右クリック →「開く」です。手順は、.dmg を開いたときの窓（画面の絵つき）と、中の「はじめに読む.txt」にあります。
 
 ## 動作環境
 
@@ -35,6 +39,10 @@ make test      # LaneKeepKit の単体テスト
 make cli       # コマンドラインツール lanekeep をビルド
 make snapshots # 全画面の見た目を PNG に書き出す（開発用）
 ```
+
+### Xcode なしで
+
+Xcode の無い Mac でも、コマンドラインツールだけで、アプリと配る .dmg を作れます（自作の証明書で署名し、Apple シリコンと Intel の両方入り）。手順は [Tools/release/README.md](Tools/release/README.md) にあります。
 
 ### 署名とアクセシビリティの許可について（重要）
 
@@ -113,6 +121,7 @@ Packages/LaneKeepKit/
   Tests/LaneKeepCoreTests   単体テスト（Swift Testing）
 Config/                     Info.plist（LSUIElement）、エンタイトルメント、ビルド設定
 Tools/generate_app_icon.py  アプリアイコンの生成スクリプト
+Tools/release/              Xcode なしでアプリと配る .dmg を作る手順
 ```
 
 - **座標変換**（§6.5）：AppKit（左下原点）とアクセシビリティ（左上原点）の変換は `CoordinateConverter.flip` の1か所にまとめ、`axY = mainScreenHeight - (nsY + height)` を単体テストで確認しています。
@@ -165,3 +174,9 @@ make snapshots   # build/snapshots に書き出す
 - フルスクリーンのウィンドウは対象外です。
 - ウィンドウ情報を公開しないアプリは保存・復元できません。
 - LaneKeep が起動していないあいだは自動復元は動きません（「一般」の「ログイン時に起動」をおすすめします）。
+
+## ライセンス
+
+[MIT ライセンス](LICENSE)です。
+
+使っている部品の [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) も MIT ライセンスです。配る .dmg のアプリには、その全文を `Contents/Resources/ThirdPartyNotices.txt` として入れています。
