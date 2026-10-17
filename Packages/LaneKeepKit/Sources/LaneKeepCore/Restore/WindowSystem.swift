@@ -50,8 +50,9 @@ public protocol WindowSystem: AnyObject {
 
     func runningState(of bundleID: String) async -> RunningState
     func requestLaunch(of bundleID: String) async -> LaunchRequestResult
-    /// Asks a running app that has no window on any desktop to open one (like clicking its Dock
-    /// icon). Returns `false` when the app has windows elsewhere or could not be asked.
+    /// Asks a running app that shows no window on any desktop to open one (like clicking its Dock
+    /// icon); windows it keeps after they were closed do not count (`WindowPresence`). Returns
+    /// `false` when the app shows windows elsewhere or could not be asked.
     func requestReopenIfWindowless(_ bundleID: String) async -> Bool
     func unhide(_ bundleID: String) async
 

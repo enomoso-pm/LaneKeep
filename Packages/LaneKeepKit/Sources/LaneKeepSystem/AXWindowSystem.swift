@@ -35,7 +35,8 @@ public final class AXWindowSystem: WindowSystem {
             return false
         }
         // Windows on another desktop are invisible to the Accessibility API; do not open a new
-        // window for an app that only looks windowless from here.
+        // window for an app that only looks windowless from here. Windows the app keeps after they
+        // were closed (LINE does this) are shown nowhere and do not stop it.
         guard !WindowServerProbe.hasWindows(pid: pid) else {
             return false
         }

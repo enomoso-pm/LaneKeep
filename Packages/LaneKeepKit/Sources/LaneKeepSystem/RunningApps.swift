@@ -1,6 +1,7 @@
 #if canImport(AppKit)
 import AppKit
 import CoreGraphics
+import LaneKeepCore
 import os
 
 /// A running app, copied out of `NSRunningApplication` so it can cross threads.
@@ -76,25 +77,31 @@ enum AppLauncher {
 /// Asks the window server about windows on all desktops (Spaces), which the Accessibility API
 /// cannot see. Needs no permission: window titles are not read.
 enum WindowServerProbe {
-    /// Whether the process has a normal window anywhere, including other desktops.
+    /// Whether the process shows a normal window anywhere, including other desktops. Windows it keeps
+    /// after they were closed do not count (`WindowPresence`).
     static func hasWindows(pid: pid_t) -> Bool {
         let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, CGWindowID(0)) as? [[String: Any]] else {
             // When in doubt, assume it has windows so that no window is opened unasked.
             return true
         }
-        return list.contains { info in
+        let windows = list.compactMap { info -> ServerWindow? in
             guard
                 info["kCGWindowOwnerPID"] as? pid_t == pid,
-                (info["kCGWindowLayer"] as? Int ?? 0) == 0,
-                (info["kCGWindowAlpha"] as? Double ?? 1) > 0,
                 let boundsDictionary = info["kCGWindowBounds"] as? NSDictionary,
                 let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary)
             else {
-                return false
+                return nil
             }
-            return bounds.width >= 50 && bounds.height >= 50
+            return ServerWindow(
+                layer: info["kCGWindowLayer"] as? Int ?? 0,
+                alpha: info["kCGWindowAlpha"] as? Double ?? 1,
+                width: bounds.width,
+                height: bounds.height,
+                isOrderedIn: (info["kCGWindowNumber"] as? Int).flatMap { SkyLight.isOrderedIn(CGWindowID($0)) }
+            )
         }
+        return WindowPresence.showsWindow(windows)
     }
 }
 
