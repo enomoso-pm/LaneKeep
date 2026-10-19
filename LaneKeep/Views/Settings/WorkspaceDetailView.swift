@@ -146,12 +146,12 @@ struct WorkspaceDetailView: View {
     private func statusLine(_ workspace: Workspace) -> some View {
         switch model.cardState(for: workspace) {
         case .restoring(let progress):
-            CardStateView(state: .restoring(progress), fallback: model.preferences.missingDisplayFallback)
+            CardStateView(state: .restoring(progress), fallback: model.missingDisplayFallback(for: workspace))
                 .frame(maxWidth: 420, alignment: .leading)
         case .note(let text):
-            CardStateView(state: .note(text), fallback: model.preferences.missingDisplayFallback)
+            CardStateView(state: .note(text), fallback: model.missingDisplayFallback(for: workspace))
         case .missingDisplays(let count):
-            CardStateView(state: .missingDisplays(count), fallback: model.preferences.missingDisplayFallback)
+            CardStateView(state: .missingDisplays(count), fallback: model.missingDisplayFallback(for: workspace))
         case .matchesCurrent, .plain:
             EmptyView()
         }
@@ -160,16 +160,19 @@ struct WorkspaceDetailView: View {
     // MARK: - Cards
 
     private func cards(_ workspace: Workspace) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 16) {
-                autoRestoreCard(workspace)
-                shortcutCard(workspace)
+        VStack(spacing: 16) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) {
+                    autoRestoreCard(workspace)
+                    shortcutCard(workspace)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 16) {
+                    autoRestoreCard(workspace)
+                    shortcutCard(workspace)
+                }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 16) {
-                autoRestoreCard(workspace)
-                shortcutCard(workspace)
-            }
+            scopeCard
         }
     }
 
@@ -231,15 +234,20 @@ struct WorkspaceDetailView: View {
             HStack(spacing: 0) {
                 Text("足りない画面がある場合：")
                     .font(.lane(12))
-                Text(model.preferences.missingDisplayFallback.title)
+                Text(model.missingDisplayFallback(for: workspace).title)
                     .font(.lane(12, .bold))
                     .foregroundStyle(Theme.ink)
-                Button("（変更可）") {
-                    model.settingsPane = .general
+                if workspace.leavesOtherDisplaysAlone {
+                    Text("（下の設定）")
+                        .font(.lane(12))
+                } else {
+                    Button("（変更可）") {
+                        model.settingsPane = .general
+                    }
+                    .buttonStyle(.link)
+                    .font(.lane(12))
+                    .help("「一般」で変えられます")
                 }
-                .buttonStyle(.link)
-                .font(.lane(12))
-                .help("「一般」で変えられます")
             }
             .laneText(12)
             .foregroundStyle(Theme.sub)
@@ -248,6 +256,20 @@ struct WorkspaceDetailView: View {
             }
         }
         .frame(minWidth: 280, idealWidth: 320, maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var scopeCard: some View {
+        SettingsCard(title: "並べる範囲") {
+            Toggle(isOn: binding(\.leavesOtherDisplaysAlone)) {
+                Text("配置先の画面にあるウィンドウだけを並べる")
+                    .laneText(13)
+                    .foregroundStyle(Theme.ink)
+            }
+            .toggleStyle(LaneSwitchStyle())
+            .frame(minHeight: 32)
+            HintText("オンにすると、ほかの画面にあるウィンドウには触りません。画面ごとにワークスペースを分けて使うとき用です。つながっていない画面の分は、寄せずにそのままにします。")
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func binding(_ keyPath: WritableKeyPath<Workspace, Bool>) -> Binding<Bool> {

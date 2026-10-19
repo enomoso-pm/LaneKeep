@@ -35,6 +35,8 @@ public struct RestoreRequest: Sendable {
     public var workspace: Workspace
     /// The displays connected right now.
     public var displays: [DisplaySnapshot]
+    /// What happens to rules whose display is not connected. A workspace that leaves other
+    /// displays alone always skips them (see `Workspace.missingDisplayFallback(preferred:)`).
     public var fallback: MissingDisplayFallback
     public var timing: RestoreTiming
     public var matching: MatchingStrategy
@@ -48,7 +50,7 @@ public struct RestoreRequest: Sendable {
     ) {
         self.workspace = workspace
         self.displays = displays
-        self.fallback = fallback
+        self.fallback = workspace.missingDisplayFallback(preferred: fallback)
         self.timing = timing
         self.matching = matching
     }

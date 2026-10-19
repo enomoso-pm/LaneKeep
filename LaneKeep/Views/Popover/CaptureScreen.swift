@@ -205,6 +205,19 @@ struct CaptureScreen: View {
             }
             .toggleStyle(LaneSwitchStyle())
             .frame(minHeight: 40)
+            Rectangle().fill(Theme.line).frame(height: 1)
+            Toggle(isOn: $session.leavesOtherDisplaysAlone) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("配置先の画面にあるウィンドウだけを並べる")
+                        .font(.lane(13))
+                        .foregroundStyle(Theme.ink)
+                    Text("ほかの画面のウィンドウは動かしません")
+                        .laneText(11)
+                        .foregroundStyle(Theme.sub)
+                }
+            }
+            .toggleStyle(LaneSwitchStyle())
+            .frame(minHeight: 40)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)

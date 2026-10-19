@@ -184,6 +184,7 @@ public enum CaptureBuilder {
         displays: [DisplaySnapshot],
         launchIfClosed: Bool,
         autoRestoreOnConnect: Bool,
+        leavesOtherDisplaysAlone: Bool = false,
         now: Date = Date()
     ) -> Workspace {
         Workspace(
@@ -194,6 +195,7 @@ public enum CaptureBuilder {
             windows: rules(from: candidates, launchIfClosed: launchIfClosed),
             autoRestoreOnConnect: autoRestoreOnConnect,
             autoRestoreOnWake: false,
+            leavesOtherDisplaysAlone: leavesOtherDisplaysAlone,
             lastUsedAt: now
         )
     }

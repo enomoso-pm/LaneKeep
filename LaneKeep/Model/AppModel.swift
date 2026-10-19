@@ -145,6 +145,11 @@ final class AppModel {
         }
     }
 
+    /// What restoring the workspace does with windows whose display is not connected.
+    func missingDisplayFallback(for workspace: Workspace) -> MissingDisplayFallback {
+        workspace.missingDisplayFallback(preferred: preferences.missingDisplayFallback)
+    }
+
     func isMatchingCurrentDisplays(_ workspace: Workspace) -> Bool {
         workspace.availability(for: displays) == .matchesCurrent
     }
@@ -550,7 +555,8 @@ final class AppModel {
             candidates: selected,
             displays: session.displays,
             launchIfClosed: session.launchIfClosed,
-            autoRestoreOnConnect: session.autoRestoreOnConnect
+            autoRestoreOnConnect: session.autoRestoreOnConnect,
+            leavesOtherDisplaysAlone: session.leavesOtherDisplaysAlone
         )
         shortcuts.assignDefaultShortcut(to: &workspace, others: workspaces)
         workspaces.append(workspace)
@@ -570,6 +576,7 @@ final class AppModel {
         refreshDisplays()
         let session = CaptureSession(mode: .overwrite(id), name: workspace.name, color: workspace.color)
         session.autoRestoreOnConnect = workspace.autoRestoreOnConnect
+        session.leavesOtherDisplaysAlone = workspace.leavesOtherDisplaysAlone
         session.launchIfClosed = workspace.windows.isEmpty || workspace.windows.contains(where: \.launchIfClosed)
         let rules = workspace.windows
         let excluded = preferences.excludedBundleIDs
@@ -594,6 +601,7 @@ final class AppModel {
             )
             workspace.setDisplays(DisplayRoles.ordered(session.displays).map(DisplayInfo.init))
             workspace.autoRestoreOnConnect = session.autoRestoreOnConnect
+            workspace.leavesOtherDisplaysAlone = session.leavesOtherDisplaysAlone
             workspace.lastUsedAt = Date()
         }
         notes[id] = "\(selected.count)件のウィンドウで上書きしました"
@@ -835,6 +843,8 @@ extension AppModel {
         case capture
         case noPermission
         case empty
+        /// The office workspace set to arrange only the windows on its own displays.
+        case leavesOtherDisplaysAlone
     }
 
     /// A model filled with the sample data of the UI mock, for previews and UI snapshots. It is
@@ -868,6 +878,11 @@ extension AppModel {
         case .capture:
             model.captureSession = CaptureSession.preview()
             model.popoverRoute = .capture
+        case .leavesOtherDisplaysAlone:
+            if let index = model.workspaces.firstIndex(where: { $0.id == PreviewData.office.id }) {
+                model.workspaces[index].leavesOtherDisplaysAlone = true
+            }
+            model.settingsPane = .workspace(PreviewData.office.id)
         case .standard, .noPermission, .empty:
             break
         }

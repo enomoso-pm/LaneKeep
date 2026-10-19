@@ -59,6 +59,9 @@ enum SnapshotRenderer {
                 model.settingsPane = .workspace(PreviewData.office.id)
                 return AnyView(SettingsRootView().environment(model))
             },
+            Shot(name: "settings-scope", size: CGSize(width: 1120, height: 1100)) {
+                AnyView(SettingsRootView().environment(AppModel.preview(.leavesOtherDisplaysAlone)))
+            },
             // The smallest settings window.
             Shot(name: "settings-minimum", size: CGSize(width: 980, height: 640)) {
                 AnyView(SettingsRootView().environment(AppModel.preview()))

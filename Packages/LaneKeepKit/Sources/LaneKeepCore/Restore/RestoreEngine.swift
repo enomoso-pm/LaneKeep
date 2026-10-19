@@ -130,6 +130,8 @@ private final class RestoreRun<System: WindowSystem> {
     private let progress: (RestoreProgress) async -> Void
     private let rules: [WindowRule]
     private let targets: [PlacementTarget?]
+    /// For a workspace that leaves other displays alone: the only displays windows are taken from.
+    private let ownDisplays: Set<String>?
     private let primaryHeight: CGFloat
     private let clock = ContinuousClock()
     private var outcomes: [RuleOutcome?]
@@ -145,6 +147,7 @@ private final class RestoreRun<System: WindowSystem> {
         self.targets = request.workspace.windows.map {
             PlacementPlanner.target(for: $0, displays: request.displays, fallback: request.fallback)
         }
+        self.ownDisplays = request.workspace.leavesOtherDisplaysAlone ? request.workspace.ruleDisplayUUIDs : nil
         self.primaryHeight = DisplayGeometry.primaryHeight(of: request.displays) ?? 0
         self.outcomes = Array(repeating: nil, count: request.workspace.windows.count)
     }
@@ -309,6 +312,14 @@ private final class RestoreRun<System: WindowSystem> {
         }
         let placed = work.placedHandles
         var taken = Set(windows.indices.filter { placed.contains(windows[$0].handle) })
+        // A workspace that leaves other displays alone takes no window from them. The windows of
+        // an app it launched or asked to open a window are new, and are taken wherever they open.
+        if let ownDisplays, work.origin == .running {
+            taken.formUnion(matchable.indices.filter { index in
+                guard let display = matchable[index].location?.displayUUID else { return true }
+                return !ownDisplays.contains(display)
+            })
+        }
         let markerRules = work.remaining.filter { rules[$0].titleMarker != nil }
         let otherRules = work.remaining.filter { rules[$0].titleMarker == nil }
 

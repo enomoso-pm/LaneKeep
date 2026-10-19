@@ -213,7 +213,7 @@ struct WorkspaceCard: View {
                 .disabled(model.isRestoring)
                 .accessibilityLabel("「\(workspace.name)」を復元")
             }
-            CardStateView(state: state, fallback: model.preferences.missingDisplayFallback)
+            CardStateView(state: state, fallback: model.missingDisplayFallback(for: workspace))
         }
         .padding(12)
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))

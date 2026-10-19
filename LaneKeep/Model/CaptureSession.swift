@@ -19,6 +19,7 @@ final class CaptureSession: Identifiable {
     var color: WorkspaceColor
     var launchIfClosed = true
     var autoRestoreOnConnect = true
+    var leavesOtherDisplaysAlone = false
     var selectedIDs: Set<String> = []
 
     private(set) var displays: [DisplaySnapshot] = []

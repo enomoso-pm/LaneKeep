@@ -15,6 +15,11 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
     public var windows: [WindowRule]
     public var autoRestoreOnConnect: Bool
     public var autoRestoreOnWake: Bool
+    /// Only windows that are on the displays of the window rules are arranged: windows on other
+    /// displays are never moved, and rules for displays that are not connected are skipped
+    /// instead of being moved to another display. For workspaces kept per monitor (one for the
+    /// left display, one for the middle one…), for example on a second desktop.
+    public var leavesOtherDisplaysAlone: Bool
     public var lastUsedAt: Date?
 
     public init(
@@ -27,6 +32,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         windows: [WindowRule],
         autoRestoreOnConnect: Bool = true,
         autoRestoreOnWake: Bool = false,
+        leavesOtherDisplaysAlone: Bool = false,
         lastUsedAt: Date? = nil
     ) {
         self.id = id
@@ -39,6 +45,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         self.windows = windows
         self.autoRestoreOnConnect = autoRestoreOnConnect
         self.autoRestoreOnWake = autoRestoreOnWake
+        self.leavesOtherDisplaysAlone = leavesOtherDisplaysAlone
         self.lastUsedAt = lastUsedAt
     }
 
@@ -49,6 +56,17 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
 
     public func display(withUUID uuid: String) -> DisplayInfo? {
         displays.first { $0.uuid == uuid }
+    }
+
+    /// The displays the window rules use.
+    public var ruleDisplayUUIDs: Set<String> {
+        Set(windows.map(\.displayUUID))
+    }
+
+    /// What happens to rules whose display is not connected: the general setting, except for a
+    /// workspace that leaves other displays alone, which never moves windows to another display.
+    public func missingDisplayFallback(preferred: MissingDisplayFallback) -> MissingDisplayFallback {
+        leavesOtherDisplaysAlone ? .skip : preferred
     }
 
     /// Replaces the recorded display configuration (and its signature).
@@ -68,6 +86,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         case windows
         case autoRestoreOnConnect
         case autoRestoreOnWake
+        case leavesOtherDisplaysAlone
         case lastUsedAt
     }
 
@@ -93,6 +112,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         windows = try container.decodeIfPresent([WindowRule].self, forKey: .windows) ?? []
         autoRestoreOnConnect = try container.decodeIfPresent(Bool.self, forKey: .autoRestoreOnConnect) ?? true
         autoRestoreOnWake = try container.decodeIfPresent(Bool.self, forKey: .autoRestoreOnWake) ?? false
+        leavesOtherDisplaysAlone = try container.decodeIfPresent(Bool.self, forKey: .leavesOtherDisplaysAlone) ?? false
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
     }
 
@@ -108,6 +128,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         try container.encode(windows, forKey: .windows)
         try container.encode(autoRestoreOnConnect, forKey: .autoRestoreOnConnect)
         try container.encode(autoRestoreOnWake, forKey: .autoRestoreOnWake)
+        try container.encode(leavesOtherDisplaysAlone, forKey: .leavesOtherDisplaysAlone)
         try container.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
     }
 }
