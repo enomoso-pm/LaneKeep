@@ -69,6 +69,10 @@ final class AppModel {
     var onboardingDismissed = false
     /// Shows the permission screen a moment longer after the permission was granted.
     private(set) var isCelebratingPermission = false
+    /// Where LaneKeep runs from: opened straight from the disk image, it asks to be moved first.
+    private(set) var installLocation: InstallLocation = .applications
+    /// Why moving LaneKeep to the Applications folder did not work, for the permission screen.
+    private(set) var moveProblem: String?
     /// The usable height of the screen the menu bar window is on.
     private(set) var availableScreenHeight: CGFloat = 900
 
@@ -117,7 +121,11 @@ final class AppModel {
     }
 
     var showsOnboarding: Bool {
-        (!isAccessibilityGranted && !onboardingDismissed) || isCelebratingPermission
+        ((!isAccessibilityGranted || needsMoveToApplications) && !onboardingDismissed) || isCelebratingPermission
+    }
+
+    var needsMoveToApplications: Bool {
+        installLocation.needsMove
     }
 
     var currentDisplaysText: String {
@@ -180,6 +188,10 @@ final class AppModel {
         guard !isStarted else { return }
         isStarted = true
         AccessibilityTuning.configureMessagingTimeout()
+        installLocation = AppInstaller.currentLocation
+        if needsMoveToApplications {
+            log.info("Running from \(Bundle.main.bundlePath, privacy: .public), not from an Applications folder")
+        }
         loadData()
         refreshDisplays()
         refreshPermission()
@@ -234,7 +246,8 @@ final class AppModel {
 
         // Without the permission LaneKeep can do nothing, and a menu bar app shows no window on
         // its own: open the menu so that the permission screen is the first thing the user sees.
-        if !isAccessibilityGranted {
+        // The same when it runs straight from the disk image and should be moved first.
+        if !isAccessibilityGranted || needsMoveToApplications {
             Task {
                 try? await Task.sleep(for: .milliseconds(600))
                 StatusItemBridge.openMenu()
@@ -291,11 +304,31 @@ final class AppModel {
     }
 
     /// "システム設定を開く": adds LaneKeep to the list in System Settings (through the system
-    /// prompt) and opens the Accessibility pane.
+    /// prompt) and opens the Accessibility pane. The pane opens a moment after the prompt, so that
+    /// the prompt shows first instead of behind System Settings; it still opens when the prompt
+    /// was answered once before and no longer shows.
     func requestAccessibilityPermission() {
         AccessibilityPermission.requestWithSystemPrompt()
-        AccessibilityPermission.openSystemSettings()
         startPermissionPolling()
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard let self, !self.isAccessibilityGranted else { return }
+            AccessibilityPermission.openSystemSettings()
+        }
+    }
+
+    /// "アプリケーションに移して開き直す": copies LaneKeep into the Applications folder, opens the
+    /// copy and quits.
+    func moveToApplicationsAndRelaunch() {
+        do {
+            let destination = try AppInstaller.copyToApplications()
+            log.info("Copied to \(destination.path, privacy: .public), opening it")
+            flushPendingSaves()
+            AppInstaller.relaunch(at: destination)
+        } catch {
+            log.error("Could not copy LaneKeep to the Applications folder: \(error.localizedDescription, privacy: .public)")
+            moveProblem = "移せませんでした。Finder で LaneKeep を「アプリケーション」へドラッグしてから、そこから開いてください。"
+        }
     }
 
     /// Checks the permission every second until it is granted (spec §3.6).
@@ -842,6 +875,8 @@ extension AppModel {
         case finished
         case capture
         case noPermission
+        /// Opened straight from the disk image, before the permission.
+        case notInstalled
         case empty
         /// The office workspace set to arrange only the windows on its own displays.
         case leavesOtherDisplaysAlone
@@ -856,7 +891,7 @@ extension AppModel {
         model.isPreview = true
         model.displays = PreviewData.homeDisplays
         model.workspaces = scenario == .empty ? [] : PreviewData.workspaces
-        model.isAccessibilityGranted = scenario != .noPermission
+        model.isAccessibilityGranted = scenario != .noPermission && scenario != .notInstalled
         model.preferences.excludedApps = [
             ExcludedApp(bundleID: "com.apple.finder", name: "Finder"),
             ExcludedApp(bundleID: "com.apple.systempreferences", name: "システム設定")
@@ -883,6 +918,8 @@ extension AppModel {
                 model.workspaces[index].leavesOtherDisplaysAlone = true
             }
             model.settingsPane = .workspace(PreviewData.office.id)
+        case .notInstalled:
+            model.installLocation = .translocated
         case .standard, .noPermission, .empty:
             break
         }

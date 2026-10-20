@@ -48,6 +48,9 @@ enum SnapshotRenderer {
             Shot(name: "popover-onboarding", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.noPermission)))
             },
+            Shot(name: "popover-move", size: nil) {
+                AnyView(PopoverRootView().environment(AppModel.preview(.notInstalled)))
+            },
             Shot(name: "popover-empty", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.empty)))
             },
