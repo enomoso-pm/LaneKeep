@@ -68,10 +68,13 @@ for arch in arm64 x86_64; do
   triple="$arch-apple-macosx$DEPLOYMENT"
   echo "Building for ${arch}..."
   # The linker then looks for the clang module caches under the mapped path and warns; the debug
-  # information it wanted them for is stripped below anyway.
-  swift build --package-path "$SRC" -c release --product LaneKeep --triple "$triple" \
+  # information it wanted them for is stripped below anyway. A failed build stops here: SwiftPM's
+  # build folder still holds the binary of the previous build, which must not be packed instead.
+  if ! swift build --package-path "$SRC" -c release --product LaneKeep --triple "$triple" \
     -Xswiftc -file-prefix-map -Xswiftc "$SRC=/LaneKeep" 2>&1 |
-    grep -E "error|warning: |Build of product" | grep -v "ModuleCache/.*\.pcm: No such file" || true
+    { grep -E "error|warning: |Build of product" | grep -v "ModuleCache/.*\.pcm: No such file" || true; }; then
+    echo "The $arch build failed"; exit 1
+  fi
   bin="$(swift build --package-path "$SRC" -c release --product LaneKeep --triple "$triple" --show-bin-path)/LaneKeep"
   [ -x "$bin" ] || { echo "The $arch build failed"; exit 1; }
   cp "$bin" "$OUT/LaneKeep-$arch"
