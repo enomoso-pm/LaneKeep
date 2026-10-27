@@ -75,6 +75,14 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         displaySignature = DisplaySignature.make(for: newDisplays)
     }
 
+    /// The name a workspace gets when the user edits `current` into `text`, in the settings or in
+    /// the list (spec §3.5): surrounding spaces are dropped, and `nil` means the name stays as it
+    /// is, because `text` is empty or the same name.
+    public static func editedName(_ text: String, current: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed == current ? nil : trimmed
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case name

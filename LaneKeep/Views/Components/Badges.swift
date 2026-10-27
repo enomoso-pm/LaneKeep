@@ -76,12 +76,15 @@ struct KeyCap: View {
     let text: String
     var isPlaceholder = false
     var isHighlighted = false
+    /// Keeps keys of different widths in a column the same width.
+    var minWidth: CGFloat = 0
 
     var body: some View {
         Text(text)
             .font(.lane(13, isPlaceholder ? .regular : .semibold))
             .foregroundStyle(isPlaceholder ? Theme.sub : Theme.ink)
             .padding(.horizontal, 10)
+            .frame(minWidth: minWidth)
             .frame(height: 28)
             .background(
                 isHighlighted ? Theme.muted : Theme.panel,

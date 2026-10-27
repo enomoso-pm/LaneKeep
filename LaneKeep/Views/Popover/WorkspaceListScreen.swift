@@ -4,6 +4,9 @@ import SwiftUI
 /// Screen 1: the connected displays and the saved workspaces.
 struct WorkspaceListScreen: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The card the list scrolls to, to show the box for its new shortcut.
+    @State private var cardToReveal: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -119,15 +122,32 @@ struct WorkspaceListScreen: View {
             .padding(.horizontal, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(model.workspaces) { workspace in
-                        WorkspaceCard(workspace: workspace)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(model.workspaces) { workspace in
+                            WorkspaceCard(workspace: workspace)
+                                .id(workspace.id)
+                        }
                     }
+                    .padding(.horizontal, 12)
                 }
-                .padding(.horizontal, 12)
+                .scrollBounceBehavior(.basedOnSize)
+                .task(id: recordingBox) {
+                    // The box for a new shortcut opens under the card, maybe below the bottom of
+                    // the list: once it is laid out, scroll as little as it takes to show it.
+                    guard case .shortcut(let id) = model.listEditing else { return }
+                    try? await Task.sleep(for: .milliseconds(30))
+                    cardToReveal = id
+                }
+                .onChange(of: cardToReveal) { _, id in
+                    guard let id else { return }
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                        proxy.scrollTo(id)
+                    }
+                    cardToReveal = nil
+                }
             }
-            .scrollBounceBehavior(.basedOnSize)
             .frame(maxHeight: .infinity)
         }
     }
@@ -168,6 +188,12 @@ struct WorkspaceListScreen: View {
         .padding(.top, 12)
     }
 
+    /// Changes when the box for a new shortcut opens, closes, or gets a longer message.
+    private var recordingBox: String {
+        guard case .shortcut(let id) = model.listEditing else { return "" }
+        return id.uuidString + (model.recordingProblem ?? "")
+    }
+
     private var autoRestoreBinding: Binding<Bool> {
         Binding(
             get: { model.preferences.autoRestoreEnabled },
@@ -176,42 +202,57 @@ struct WorkspaceListScreen: View {
     }
 }
 
-/// One workspace in the list (".ws").
+/// One workspace in the list (".ws"). A double-click on the name renames it, and the key next to
+/// "復元" records a new shortcut, both in the card (spec §3.2).
 struct WorkspaceCard: View {
     let workspace: Workspace
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let state = model.cardState(for: workspace)
+        let isRenaming = model.isRenaming(workspace.id)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 WorkspaceTile(color: workspace.color, icon: workspace.icon)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(workspace.name)
-                        .laneText(14, .semibold)
-                        .foregroundStyle(Theme.ink)
-                        .lineLimit(1)
+                    if isRenaming {
+                        WorkspaceNameEditor()
+                    } else {
+                        Text(workspace.name)
+                            .laneText(14, .semibold)
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                            .onTapGesture(count: 2) {
+                                model.beginRenaming(workspace.id)
+                            }
+                            .help("ダブルクリックで名前を変更")
+                    }
                     Text(DisplayText.workspaceMeta(workspace))
                         .laneText(12)
                         .foregroundStyle(Theme.sub)
                 }
-                .accessibilityElement(children: .combine)
-                Spacer(minLength: 8)
-                Button {
-                    model.restore(workspace.id, trigger: .manual)
-                } label: {
-                    HStack(spacing: 6) {
-                        Text("復元")
-                        if let shortcut = model.shortcutText(for: workspace) {
-                            Text(shortcut)
-                                .font(.lane(11, .medium))
-                                .foregroundStyle(Theme.sub)
-                        }
-                    }
+                .accessibilityElement(children: isRenaming ? .contain : .combine)
+                .accessibilityAction(named: "名前を変更") {
+                    model.beginRenaming(workspace.id)
                 }
-                .buttonStyle(LaneButtonStyle())
-                .disabled(model.isRestoring)
-                .accessibilityLabel("「\(workspace.name)」を復元")
+                Spacer(minLength: 8)
+                HStack(spacing: 6) {
+                    WorkspaceShortcutKey(workspace: workspace)
+                    Button("復元") {
+                        model.finishListEditing()
+                        model.restore(workspace.id, trigger: .manual)
+                    }
+                    .buttonStyle(LaneButtonStyle())
+                    .disabled(model.isRestoring)
+                    .accessibilityLabel("「\(workspace.name)」を復元")
+                }
+            }
+            if model.isRecordingShortcut(workspace.id) {
+                ShortcutRecordingRow(problem: model.recordingProblem) {
+                    model.cancelShortcutRecording()
+                }
+            } else if let notice = model.shortcutNotice(for: workspace) {
+                HintText(notice, color: Theme.warn)
             }
             CardStateView(state: state, fallback: model.missingDisplayFallback(for: workspace))
         }
@@ -222,8 +263,16 @@ struct WorkspaceCard: View {
                 .strokeBorder(isHighlighted(state) ? Theme.accent : Theme.line, lineWidth: 1.5)
         )
         .contextMenu {
-            Button("復元") { model.restore(workspace.id, trigger: .manual) }
-                .disabled(model.isRestoring)
+            Button("復元") {
+                model.finishListEditing()
+                model.restore(workspace.id, trigger: .manual)
+            }
+            .disabled(model.isRestoring)
+            Divider()
+            Button("名前を変更") { model.beginRenaming(workspace.id) }
+            Button("ショートカットを変更…") { model.beginShortcutRecording(workspace.id) }
+                .disabled(model.shortcutName(for: workspace) == nil)
+            Divider()
             Button("設定で開く…") { model.openSettings(.workspace(workspace.id)) }
         }
     }
@@ -234,6 +283,107 @@ struct WorkspaceCard: View {
             return true
         }
         return model.isMatchingCurrentDisplays(workspace)
+    }
+}
+
+/// The name of a workspace while it is renamed in the list. Return or a click elsewhere keeps the
+/// new name, esc puts the old one back.
+private struct WorkspaceNameEditor: View {
+    @Environment(AppModel.self) private var model
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        TextField("名前", text: draft)
+            .textFieldStyle(.plain)
+            .font(.lane(14, .semibold))
+            .foregroundStyle(Theme.ink)
+            .labelsHidden()
+            .focused($isFocused)
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.accent, lineWidth: 1.5)
+            )
+            // The text stays where the name was.
+            .padding(.leading, -7)
+            .onSubmit { model.commitRenaming() }
+            .onExitCommand { model.cancelRenaming() }
+            .onAppear { isFocused = true }
+            .task {
+                // Once the field has the focus: the whole name selected, so that typing replaces
+                // it, as when renaming in the Finder.
+                try? await Task.sleep(for: .milliseconds(50))
+                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            }
+            .accessibilityLabel("ワークスペースの名前")
+    }
+
+    private var draft: Binding<String> {
+        Binding(
+            get: { model.nameDraft },
+            set: { model.nameDraft = $0 }
+        )
+    }
+}
+
+/// The restore shortcut of a workspace as a key, as in the settings. Clicking it waits in the card
+/// for a new key combination.
+private struct WorkspaceShortcutKey: View {
+    let workspace: Workspace
+    @Environment(AppModel.self) private var model
+    @State private var isHovering = false
+
+    var body: some View {
+        let text = model.shortcutText(for: workspace)
+        Button {
+            model.beginShortcutRecording(workspace.id)
+        } label: {
+            KeyCap(
+                text: text ?? "なし",
+                isPlaceholder: text == nil,
+                isHighlighted: isHovering || model.isRecordingShortcut(workspace.id),
+                // As wide as "⌃⌥2", so that the keys of the cards line up.
+                minWidth: 54
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(model.shortcutName(for: workspace) == nil)
+        .onHover { isHovering = $0 }
+        .help("クリックして変更")
+        .accessibilityLabel("「\(workspace.name)」のショートカット")
+        .accessibilityValue(text ?? "なし")
+        .accessibilityHint("ショートカットを変更します")
+    }
+}
+
+/// The box in a workspace card while its new shortcut is recorded, with what is wrong with the
+/// last key combination pressed, if anything.
+private struct ShortcutRecordingRow: View {
+    let problem: String?
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("新しいキーを押してください")
+                    .laneText(13, .semibold)
+                    .foregroundStyle(Theme.accentInk)
+                Spacer(minLength: 8)
+                Button("取り消す", action: onCancel)
+                    .buttonStyle(PlainTextButtonStyle(size: 12))
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 4)
+            .frame(height: 36)
+            .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous)
+                    .strokeBorder(Theme.accent, lineWidth: 1.5)
+            )
+            HintText(problem ?? "⌫ で削除、esc で取り消します。", color: problem == nil ? Theme.sub : Theme.warn)
+        }
     }
 }
 

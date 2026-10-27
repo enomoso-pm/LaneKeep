@@ -311,11 +311,10 @@ private struct WorkspaceNameField: View {
     }
 
     private func commit() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
+        if let newName = Workspace.editedName(text, current: name) {
+            onCommit(newName)
+        } else {
             text = name
-        } else if trimmed != name {
-            onCommit(trimmed)
         }
     }
 }

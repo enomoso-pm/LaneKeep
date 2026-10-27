@@ -42,6 +42,12 @@ enum SnapshotRenderer {
             Shot(name: "popover-finished", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.finished)))
             },
+            Shot(name: "popover-rename", size: nil) {
+                AnyView(PopoverRootView().environment(AppModel.preview(.renaming)))
+            },
+            Shot(name: "popover-shortcut", size: nil) {
+                AnyView(PopoverRootView().environment(AppModel.preview(.recordingShortcut)))
+            },
             Shot(name: "popover-capture", size: nil) {
                 AnyView(PopoverRootView().environment(AppModel.preview(.capture)))
             },

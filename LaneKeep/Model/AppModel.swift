@@ -60,8 +60,16 @@ final class AppModel {
     private(set) var storageProblem: String?
     /// Set after a shortcut was recorded that another action already used.
     private(set) var shortcutNotice: String?
+    /// The shortcut whose recording led to `shortcutNotice`, so that the list shows it in its card.
+    private(set) var shortcutNoticeName: KeyboardShortcuts.Name?
     /// Bumped whenever a keyboard shortcut changes, so views that show shortcuts update.
     private(set) var shortcutRevision = 0
+    /// The name or the shortcut being changed in the list of the menu bar window.
+    private(set) var listEditing: ListEditing?
+    /// The name typed while a workspace is renamed in the list.
+    var nameDraft = ""
+    /// Why the key combination just pressed cannot be the shortcut being recorded in the list.
+    private(set) var recordingProblem: String?
 
     var popoverRoute: PopoverRoute = .list
     private(set) var captureSession: CaptureSession?
@@ -84,6 +92,9 @@ final class AppModel {
     private let shortcuts = ShortcutCenter()
     /// The second look after an automatic restore (see `RestoreReview`).
     private let reviewScheduler = RestoreReviewScheduler()
+    private let listMonitor = ListEditingMonitor()
+    /// Counts the changes started in the list, so that a click handled late does not end a newer one.
+    @ObservationIgnored private var listEditingCount = 0
     @ObservationIgnored private var displayMonitor: DisplayMonitor?
     @ObservationIgnored private var saveWorkspacesTask: Task<Void, Never>?
     @ObservationIgnored private var savePreferencesTask: Task<Void, Never>?
@@ -266,6 +277,7 @@ final class AppModel {
     }
 
     func quit() {
+        finishListEditing()
         flushPendingSaves()
         NSApp.terminate(nil)
     }
@@ -387,8 +399,10 @@ final class AppModel {
                 availableScreenHeight = height
             }
         case .hidden:
-            // Closing the menu abandons a save in progress. A menu that is merely covered (the
-            // display went to sleep) keeps it.
+            // Closing the menu keeps a name being typed in the list, like a click elsewhere, and
+            // abandons a save in progress. A menu that is merely covered (the display went to
+            // sleep) keeps both.
+            finishListEditing()
             if popoverRoute == .capture {
                 cancelCapture()
             }
@@ -398,6 +412,7 @@ final class AppModel {
     }
 
     func openSettings(_ pane: SettingsPane? = nil) {
+        finishListEditing()
         if let pane {
             settingsPane = pane
         } else if case .workspace(let id) = settingsPane, workspace(id) == nil {
@@ -551,6 +566,7 @@ final class AppModel {
     // MARK: - Saving the current layout
 
     func beginCapture() {
+        finishListEditing()
         refreshPermission()
         guard isAccessibilityGranted else {
             onboardingDismissed = false
@@ -677,6 +693,139 @@ final class AppModel {
         }
     }
 
+    // MARK: - Changing a workspace in the list
+
+    func isRenaming(_ id: UUID) -> Bool {
+        listEditing == .name(id)
+    }
+
+    func isRecordingShortcut(_ id: UUID) -> Bool {
+        listEditing == .shortcut(id)
+    }
+
+    /// `shortcutNotice`, when it came from recording the shortcut of this workspace.
+    func shortcutNotice(for workspace: Workspace) -> String? {
+        guard let name = ShortcutCenter.name(for: workspace), shortcutNoticeName == name else { return nil }
+        return shortcutNotice
+    }
+
+    /// Turns the name of a workspace in the list into a text field (a double-click on it).
+    func beginRenaming(_ id: UUID) {
+        finishListEditing()
+        guard let workspace = workspace(id) else { return }
+        nameDraft = workspace.name
+        startListEditing(.name(id))
+    }
+
+    /// Keeps the name typed in the list (Return, a click elsewhere), unless it is empty or the same.
+    func commitRenaming() {
+        guard case .name(let id) = listEditing else { return }
+        let draft = nameDraft
+        endListEditing()
+        if let current = workspace(id)?.name, let newName = Workspace.editedName(draft, current: current) {
+            update(id) { $0.name = newName }
+        }
+    }
+
+    /// Puts the old name back (esc).
+    func cancelRenaming() {
+        guard case .name = listEditing else { return }
+        endListEditing()
+    }
+
+    /// Waits in the card of a workspace for the key combination of its new restore shortcut (a
+    /// click on its key).
+    func beginShortcutRecording(_ id: UUID) {
+        finishListEditing()
+        guard let workspace = workspace(id), ShortcutCenter.name(for: workspace) != nil else { return }
+        startListEditing(.shortcut(id))
+        announce("新しいキーを押してください")
+    }
+
+    /// Stops waiting for a key combination and keeps the shortcut as it is.
+    func cancelShortcutRecording() {
+        guard case .shortcut = listEditing else { return }
+        endListEditing()
+    }
+
+    /// Ends whatever is being changed in the list: a new name is kept, a recording stops. Called
+    /// before anything else happens in the menu bar window, and when it closes.
+    func finishListEditing() {
+        commitRenaming()
+        cancelShortcutRecording()
+    }
+
+    private func startListEditing(_ editing: ListEditing) {
+        listEditing = editing
+        recordingProblem = nil
+        listEditingCount += 1
+        let count = listEditingCount
+        let window = StatusItemBridge.menuWindow
+        listMonitor.watchClicks(in: window) { [weak self] in
+            // A click that started another change (another key, another name) leaves it alone.
+            guard let self, self.listEditingCount == count else { return }
+            self.finishListEditing()
+        }
+        switch editing {
+        case .name:
+            listMonitor.watchEscape(in: window) { [weak self] in
+                self?.cancelRenaming()
+            }
+        case .shortcut(let id):
+            // Off while recording, so that the shortcut of another workspace (or the menu's) is
+            // recorded rather than run.
+            let allShortcuts = [ShortcutCenter.toggleMenu] + workspaces.compactMap { ShortcutCenter.name(for: $0) }
+            listMonitor.recordKeys(in: window, pausing: allShortcuts) { [weak self] event in
+                self?.recordShortcutKey(event, for: id)
+            }
+        }
+    }
+
+    private func endListEditing() {
+        listEditing = nil
+        recordingProblem = nil
+        listMonitor.stop()
+    }
+
+    private func recordShortcutKey(_ event: NSEvent, for id: UUID) {
+        guard let workspace = workspace(id), let name = ShortcutCenter.name(for: workspace) else {
+            cancelShortcutRecording()
+            return
+        }
+        let key = ListEditingMonitor.key(of: event)
+        switch ShortcutKeyPress.interpret(key, modifiers: ListEditingMonitor.modifiers(of: event)) {
+        case .cancel:
+            cancelShortcutRecording()
+        case .remove:
+            endListEditing()
+            KeyboardShortcuts.setShortcut(nil, for: name)
+            shortcutRecorded(for: name)
+            announce("ショートカットを削除しました")
+        case .needsModifier:
+            rejectRecordedKey("⌃・⌥・⌘ のどれかと一緒に押してください")
+        case .shortcut:
+            guard let shortcut = KeyboardShortcuts.Shortcut(event: event) else {
+                NSSound.beep()
+                return
+            }
+            if let problem = ShortcutAvailability.problem(with: shortcut, pressedWith: event) {
+                rejectRecordedKey(problem)
+                return
+            }
+            // The global shortcuts are back on first, so that the new one gets registered.
+            endListEditing()
+            KeyboardShortcuts.setShortcut(shortcut, for: name)
+            shortcutRecorded(for: name)
+            announce("ショートカットを\(shortcut)にしました")
+        }
+    }
+
+    private func rejectRecordedKey(_ problem: String) {
+        NSSound.beep()
+        recordingProblem = problem
+        announce(problem)
+    }
+
     // MARK: - Shortcuts
 
     func shortcutName(for workspace: Workspace) -> KeyboardShortcuts.Name? {
@@ -692,11 +841,13 @@ final class AppModel {
         shortcuts.registerHandlers(for: workspaces)
         guard let notice else { return }
         shortcutNotice = notice
+        shortcutNoticeName = name
         shortcutNoticeTask?.cancel()
         shortcutNoticeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
             self?.shortcutNotice = nil
+            self?.shortcutNoticeName = nil
         }
     }
 
@@ -880,6 +1031,10 @@ extension AppModel {
         case empty
         /// The office workspace set to arrange only the windows on its own displays.
         case leavesOtherDisplaysAlone
+        /// The office workspace being renamed in the list.
+        case renaming
+        /// A new shortcut being recorded for the laptop workspace in the list.
+        case recordingShortcut
     }
 
     /// A model filled with the sample data of the UI mock, for previews and UI snapshots. It is
@@ -920,6 +1075,11 @@ extension AppModel {
             model.settingsPane = .workspace(PreviewData.office.id)
         case .notInstalled:
             model.installLocation = .translocated
+        case .renaming:
+            model.listEditing = .name(PreviewData.office.id)
+            model.nameDraft = PreviewData.office.name
+        case .recordingShortcut:
+            model.listEditing = .shortcut(PreviewData.laptop.id)
         case .standard, .noPermission, .empty:
             break
         }
